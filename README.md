@@ -15,7 +15,7 @@ Key highlights:
 - **Sample efficiency**: Competes with full-data methods using fewer training points.
 
 ## Technologies
-- Python 3.9+
+- Python 3.11+
 - Proximal Algorithm, Augmented Lagrangian Method, Semi-smooth Newton Descent
 - PyTorch (for Prox-SGD and LibAUC baselines)
 - torchvision (for feature extraction on CIFAR-10)
