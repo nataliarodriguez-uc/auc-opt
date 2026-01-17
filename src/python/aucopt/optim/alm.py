@@ -1,11 +1,11 @@
-from problem_instance import ProblemInstance
-from problem_variables import ALMParameters, SSNParameters, LineSearchParameters
-from problem_variables import ALMVar, ProxVar, SSNVar, ALMLog
-from ssn import run_ssn
-from linesearch import compute_line_search
+from src.python.aucopt.data.problem_instance import ProblemInstance
+from src.python.aucopt.optim.variables import ALMParameters, SSNParameters, LineSearchParameters
+from src.python.aucopt.optim.variables import ALMVar, ProxVar, SSNVar, ALMLog
+from src.python.aucopt.optim.ssn import run_ssn
+from src.python.aucopt.optim.linesearch import compute_line_search
 from prox import compute_prox_ssn, compute_prox_ls
 from prox import prox_smallgamma_ssn, prox_gamma2_ssn, prox_largegamma_ssn
-from problem_updates import update_tol, update_iter, update_proxmethod, update_sigma_gamma
+from src.python.aucopt.optim.parameters import update_tol, update_iter, update_proxmethod, update_sigma_gamma
 import numpy as np
 import time
 from copy import deepcopy

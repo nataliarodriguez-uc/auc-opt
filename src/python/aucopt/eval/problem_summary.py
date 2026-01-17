@@ -1,6 +1,6 @@
 import pandas as pd
 import numpy as np
-from alm import run_alm
+from src.python.aucopt.optim.alm import run_alm
 from numpy.linalg import norm
 from numpy import dot, arccos
 import glob

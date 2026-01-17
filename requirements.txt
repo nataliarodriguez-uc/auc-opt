@@ -1,4 +1,5 @@
 numpy
+torchvision
 scikit-learn
 matplotlib
 jupyter

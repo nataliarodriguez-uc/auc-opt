@@ -1,6 +1,6 @@
 import numpy as np
 from torchvision import datasets, transforms
-from problem_instance import ProblemInstance
+from src.python.aucopt.data.problem_instance import ProblemInstance
 
 def load_cifar10_binary(class0=3, class1=5, train_ratio=0.7, seed=123):
     transform = transforms.ToTensor()

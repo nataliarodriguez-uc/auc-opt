@@ -1,5 +1,5 @@
 import numpy as np
-from prox import compute_prox_ls
+from src.python.aucopt.optim.prox import compute_prox_ls
 import time
 
 def compute_line_search(t, k, almlog, almvar, ssnvar, proxvar, d, PI, LS):
