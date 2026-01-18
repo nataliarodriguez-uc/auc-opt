@@ -1,7 +1,7 @@
 import numpy as np
 import time
-from prox import compute_prox_ssn
-from src.python.aucopt.optim.linesearch import compute_line_search
+from aucopt.optim.prox import compute_prox_ssn
+from aucopt.optim.linesearch import compute_line_search
 
 def run_ssn(t, almlog, almvar, ssnvar, proxvar, PI, SP, LS):
     

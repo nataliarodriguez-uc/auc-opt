@@ -1,5 +1,5 @@
-from src.python.aucopt.optim.variables import ALMVar, ALMParameters, SSNParameters
-from src.python.aucopt.optim.prox import *
+from aucopt.optim.variables import ALMVar, ALMParameters, SSNParameters
+from aucopt.optim.prox import *
 
 def update_tol(SP: SSNParameters, t: int):
     
