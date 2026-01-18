@@ -1,4 +1,4 @@
-# Ignore unfinished CIFAR10 code
+
 cifar10_example/
 .venv/
 __pycache__/

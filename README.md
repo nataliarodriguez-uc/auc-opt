@@ -95,29 +95,22 @@ This repository is under active development. Current work focuses on:
 
 **Natalia A. Rodriguez Figueroa**  
 Optimization · Machine Learning · Contrastive Learning
+
 University of California, Berkeley - Department of Industrial Engineering and Operations Research
+
 This work is supported by the advisory of Dr. Ying Cui. 
 
 ### References
 
-- P. D. Khanh, B. S. Mordukhovich, and V. T. Phat.  
-  *A generalized Newton method for subgradient systems*, 2022.  
-  arXiv:2009.10551.
+- P. D. Khanh, B. S. Mordukhovich, and V. T. Phat. *A generalized Newton method for subgradient systems*, 2022. arXiv:2009.10551.
 
-- X. Li, D. Sun, and K.-C. Toh.  
-  *A highly efficient semismooth Newton augmented Lagrangian method for solving LASSO problems*.  
-  **SIAM Journal on Optimization**, 28(1):433–458, 2018.
+- X. Li, D. Sun, and K.-C. Toh. *A highly efficient semismooth Newton augmented Lagrangian method for solving LASSO problems*. **SIAM Journal on Optimization**, 28(1):433–458, 2018.
 
-- L. Tian and A. M.-C. So.  
-  *Computing d-stationary points of ρ-margin loss SVM*.  
-  **Proceedings of AISTATS (PMLR)**, vol. 151, 2022.
+- L. Tian and A. M.-C. So. *Computing d-stationary points of ρ-margin loss SVM*. **Proceedings of AISTATS (PMLR)**, vol. 151, 2022.
 
-- Y. Wang, W. Yin, and J. Zeng.  
-  *Global convergence of ADMM in nonconvex nonsmooth optimization*, 2015.  
-  arXiv [math.OC].
+- Y. Wang, W. Yin, and J. Zeng. *Global convergence of ADMM in nonconvex nonsmooth optimization*, 2015. arXiv [math.OC].
 
-- T. Yang.  
-  *Algorithmic foundations of empirical X-risk minimization*, 2023.
+- T. Yang. *Algorithmic foundations of empirical X-risk minimization*, 2023.
 
 
 
