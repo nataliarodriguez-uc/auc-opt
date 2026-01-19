@@ -42,7 +42,7 @@ def evaluate_pytorch_bce(X_train, X_test, y_train, y_test, device="cpu"):
         with torch.no_grad():
             scores = model(X_test_tensor).squeeze().cpu().numpy()
             auc = roc_auc_score(y_test, scores)
-            return auc
+            return auc, scores
     except Exception as e:
         return f"Error: {e}"
 
@@ -82,6 +82,6 @@ def evaluate_libauc(X_train, X_test, y_train, y_test, device="cpu"):
         with torch.no_grad():
             scores = model(X_test_tensor).squeeze().cpu().numpy()
             auc = roc_auc_score(y_test, scores)
-            return auc
+            return auc, scores
     except Exception as e:
         return f"Error: {e}"

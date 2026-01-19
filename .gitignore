@@ -1,8 +1,8 @@
-
 cifar10_example/
 .venv/
 __pycache__/
 *.pyc
 .ipynb_checkpoints/
 .DS_Store
-svm_example_copy
+svm_example_old
+experiments/
