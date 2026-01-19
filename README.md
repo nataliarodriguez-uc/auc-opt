@@ -1,116 +1,160 @@
 # AUC-Optimized Contrastive Learning via Proximal Methods
 
-This repository explores **contrastive learning and ranking objectives**
-through **AUC optimization**, focusing on efficient methods for
-objectives that cannot be expressed using standard empirical risk
-minimization (ERM).
-
-The project formulates contrastive learning as a **pairwise optimization
-problem** and applies **proximal and augmented Lagrangian methods** to
-handle non-smooth losses and large collections of pairwise comparisons.
+> Rethinking contrastive learning as an AUC optimization problem, solved with proximal and augmented Lagrangian methods.
 
 ---
 
-## Motivation
+## About the Project
 
-Many practical ML objectives—such as AUC, ranking metrics, and
-contrastive learning—depend on **comparisons between samples** rather
-than pointwise losses. These objectives are difficult to optimize using
-standard gradient-based methods due to non-differentiability and
-quadratic scaling in the number of pairs.
+Many machine learning objectives—like AUC, ranking metrics, and contrastive learning—fundamentally depend on **pairwise comparisons** rather empirical loss function. These objectives are challenging to optimize because they involve:
 
-This project addresses these challenges by combining:
-- Pairwise surrogate losses
-- Proximal optimization
-- Augmented Lagrangian methods
+- Non-differentiable indicator functions
+- Quadratic scaling in pairwise comparisons  
+- Cannot be expressed as standard empirical risk minimization (ERM)
+
+This project introduces a **proximal optimization framework** for AUC-based contrastive learning that:
+- Replaces indicator functions with tractable piecewise linear surrogates
+- Uses augmented Lagrangian methods (ALM) with semi-smooth Newton subsolvers
+- Achieves competitive performance with controlled pairwise sampling strategies
+
+**Key Result**: Achieved **97.75% AUC** on imbalanced CIFAR-10 binary classification (vs. 98.08% baseline) with 80% less features than LibAUC Deep Learning Library. 
 
 ---
 
-## Key Ideas
+## Quick Start
 
-- Reformulation of contrastive learning as **AUC maximization**
-- Continuous surrogates for indicator-based losses
-- Proximal and ALM-based optimization for constrained objectives
-- Controlled pairwise sampling to reduce computational cost
+### Installation
+
+```bash
+git clone https://github.com/nataliarodriguez-uc/auc-opt.git
+cd auc-opt
+pip install -r requirements.txt
+```
+
+### Run Demo
+
+
+
+---
+
+## Key Results
+
+### CIFAR-10 Binary Classification
+
+| Dataset | Configuration | Prox AUC | LibAUC Baseline |
+|---------|--------------|----------|-----------------|
+| Balanced | σ=1.0, 25 pairs, 10 batches | **95.27%** | 97.56% |
+| Imbalanced (1:9) | σ=1.0, 25 pairs, 10 batches | **97.75%** | 98.08% |
+
+### Synthetic SVM Experiments
+
+| Scenario | Dimensions | Prox AUC | BCE | LibAUC |
+|----------|-----------|----------|-----|--------|
+| Low separation, m≫n | 1000×50 | 99.12% | 99.88% | 99.30% |
+| High separation, m≪n | 50×500 | **100%** | 100% | 0%* |
+| High separation, m≫n | 1000×50 | 99.94% | 100% | 100% |
+
+*LibAUC fails completely in high-dimensional settings
+
+**Finding**: σ=1.0 provides stable performance across scenarios; method excels when features >> samples.
+
+---
+
+## Repository Structure
+
+```
+auc-opt/
+├── demos/                      # Demo notebooks and examples
+│   └── svm_example.ipynb       # SMV example notebook
+├── docs/                       # Detailed documentation
+│   ├── 1_overview.md           # Problem motivation & X-risk background
+│   ├── 2_algorithm.md          # Mathematical formulation
+│   ├── 3_optimization.md       # Proximal methods & ALM details
+│   ├── 4_experiments.md        # Experimental design & analysis
+│   └── 5_math_appendix.md      # Derivations & proofs
+├── src/                        # Core implementation
+│   ├── julia/                  # Julia optimization routines
+│   └── python/                 # Python implementation
+│       └── aucopt/             # Main package
+│           ├── __pycache__/
+│           ├── data/           # Data loading utilities
+│           ├── eval/           # Evaluation metrics
+│           ├── optim/          # Optimization algorithms (ALM, SSN)
+│           └── __init__.py
+└── requirements.txt
+```
 
 ---
 
 ## Documentation
 
-The repository includes structured technical documentation covering the
-full lifecycle of the project, from problem motivation to optimization
-details and empirical evaluation:
+**New to the project?** Start here:
+- **[Overview](docs/1_overview.md)** - Problem motivation and background on X-risk minimization
+- **[Algorithm](docs/2_algorithm.md)** - How contrastive learning reduces to AUC optimization
 
-- **[Project Overview](docs/1_overview.md)**  
-  Background, motivation, and framing of contrastive learning as a
-  ranking and AUC optimization problem.
-
-- **[Algorithmic Formulation](docs/2_algorithm.md)**  
-  Derivation of the pairwise contrastive objective, reduction to AUC in
-  the binary case, and surrogate loss construction.
-
-- **[Optimization Methodology](docs/3_optimization.md)**  
-  Proximal updates, augmented Lagrangian formulation, and solver design
-  used to handle non-smooth, constrained objectives.
-
-- **[Experimental Evaluation](docs/4_experiments.md)**  
-  Synthetic SVM-style experiments and contrastive learning experiments
-  on CIFAR-10, analyzing convergence behavior, sampling strategies, and
-  AUC performance.
-
-- **[Mathematical Appendix](docs/5_math_appendix.md)**  
-  Full derivations, proximal case analysis, and semi-smooth Newton
-  details supporting the optimization methods.
-
+**Implementation details:**
+- **[Optimization Methods](docs/3_optimization.md)** - Proximal operators, ALM, and SSN solver
+- **[Experiments](docs/4_experiments.md)** - Full experimental setup and results
+- **[Math Appendix](docs/5_math_appendix.md)** - Complete derivations and proofs
 
 ---
 
-## Experiments
+## Methodology Highlights
 
-The repository includes both synthetic and real-data experiments to
-evaluate optimization behavior and ranking performance.
+### Proximal Framework
+- **Surrogate Loss**: Piecewise linear approximation ℓ_δ(t) of indicator function
+- **Closed-form Proximal Operators**: γ-dependent solutions (γ = 1/σ)
+- **ALM Decomposition**: Splits problem into tractable subproblems
 
-Synthetic SVM-style experiments are used to study convergence,
-stability, and sensitivity to hyperparameters under controlled geometric
-settings. In addition, contrastive learning experiments on subsets of
-CIFAR-10 evaluate the method in a realistic, high-dimensional setting,
-including both balanced and imbalanced class distributions.
+### Why This Approach?
+- Direct AUC optimization (not a proxy loss)
+- Handles non-smooth objectives efficiently
+- Extends to ranking, precision@K, and other pairwise metrics
+- Computationally efficient with controlled sampling
 
-Across experiments, results highlight the impact of proximal parameters,
-pairwise sampling strategies, and constraint enforcement on AUC-based
-performance.
+See [docs/3_optimization.md](docs/3_optimization.md) for mathematical details.
 
 ---
 
-## Status
+## Current Status
 
-This repository is under active development. Current work focuses on:
-- Cleaning and integrating CIFAR-10 contrastive experiments
-- Modularizing optimization routines
-- Extending methods to more general contrastive settings
+**Completed:**
+-  Proximal operator implementation with ALM + SSN framework
+-  Synthetic SVM validation experiments
+-  CIFAR-10 binary classification experiments
+
+**In Progress:**
+- Uploading complete experiment structure
+- Advanced sampling strategies (stochastic descent via batching)
+- Integration with modern architectures
+
+**Future Work:**
+- Self-supervised learning formulation
+- Healthcare dataset applications
+- Julia coding demo files
+
+---
+
+## References
+
+Key theoretical foundations:
+- Yang, T. (2023). *Algorithmic foundations of empirical X-risk minimization*
+- Khanh et al. (2022). *A generalized Newton method for subgradient systems*
+- Li, Sun & Toh (2018). *Semismooth Newton augmented Lagrangian method for LASSO*
+- Tian & So (2022). *Computing d-stationary points of ρ-margin loss SVM*
 
 ---
 
 ## Author
 
 **Natalia A. Rodriguez Figueroa**  
-Optimization · Machine Learning · Contrastive Learning
+PhD Student, Industrial Engineering & Operations Research  
+University of California, Berkeley  
+Advisor: Dr. Ying Cui
 
-University of California, Berkeley - Department of Industrial Engineering and Operations Research
+[GitHub Profile](https://github.com/nataliarodriguez-uc)
+Contact Information: natalia_rodriguezuc@berkeley.edu
 
-This work is supported by the advisory of Dr. Ying Cui. 
-
-### References
-
-- P. D. Khanh, B. S. Mordukhovich, and V. T. Phat. *A generalized Newton method for subgradient systems*, 2022. arXiv:2009.10551.
-
-- X. Li, D. Sun, and K.-C. Toh. *A highly efficient semismooth Newton augmented Lagrangian method for solving LASSO problems*. **SIAM Journal on Optimization**, 28(1):433–458, 2018.
-
-- L. Tian and A. M.-C. So. *Computing d-stationary points of ρ-margin loss SVM*. **Proceedings of AISTATS (PMLR)**, vol. 151, 2022.
-
-- Y. Wang, W. Yin, and J. Zeng. *Global convergence of ADMM in nonconvex nonsmooth optimization*, 2015. arXiv [math.OC].
-
-- T. Yang. *Algorithmic foundations of empirical X-risk minimization*, 2023.
 
 
 

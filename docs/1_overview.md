@@ -123,6 +123,6 @@ multi-language implementations that balance rapid experimentation with
 high-performance optimization.
 
 The accompanying documentation is structured to reflect this
-progression—from motivation and problem formulation to optimization
-methods and empirical behavior—while full mathematical derivations are
+progression, from motivation and problem formulation to optimization
+methods and empirical behavior, while full mathematical derivations are
 provided separately for reference.
