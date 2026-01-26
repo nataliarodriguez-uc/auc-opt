@@ -6,3 +6,4 @@ __pycache__/
 .DS_Store
 svm_example_old
 experiments/
+old_codes/

@@ -1,6 +1,6 @@
 import numpy as np
 
-class DataSet:
+class DataSet_SVM:
     def __init__(self, m, n, num_classes, class_ratios, sep_distance,
                  feature_noise=0.0, flip_ratio=0.0, seed=1034):
         

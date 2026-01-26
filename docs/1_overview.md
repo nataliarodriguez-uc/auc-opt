@@ -10,9 +10,9 @@
 
 Most machine learning models are trained using **Empirical Risk Minimization (ERM)**, where we minimize the average loss over individual data points:
 
-$
+$$
 \min_{w \in \mathbb{R}^d} \frac{1}{n} \sum_{i=1}^n \ell(w, x_i)
-$
+$$
 
 This formulation is powerful because:
 - Gradients are straightforward to compute
@@ -114,9 +114,9 @@ Instead of treating contrastive learning as a separate problem, we can:
 
 Naively evaluating all pairwise interactions leads to:
 
-$
+$$
 \text{Cost} = O(n^2) \text{ comparisons}
-$
+$$
 
 For $n = 10{,}000$ samples:
 - Number of pairs: $10{,}000^2 = 100{,}000{,}000$
@@ -156,13 +156,13 @@ This sparse structure is critical for making the method computationally tractabl
 
 Most pairwise objectives use **indicator functions**:
 
-$
+$$
 \mathbb{1}(w^\top z_i > w^\top z_j) = 
 \begin{cases}
 1 & \text{if } w^\top z_i > w^\top z_j \\
 0 & \text{otherwise}
 \end{cases}
-$
+$$
 
 Problems:
 - **Not differentiable** at the decision boundary
