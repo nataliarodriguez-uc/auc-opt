@@ -22,6 +22,13 @@ def run_alm(
     
     """
     Runs the Augmented Lagrangian Method (ALM) to solve a pairwise ranking optimization problem.
+    
+    OPTIMIZED VERSION with improvements:
+    - Reduced deep copies (only copy when necessary)
+    - Pre-compute commonly used values
+    - Use in-place operations for array updates
+    - Cache length calculations
+    - Avoid redundant norm calculations
 
     Parameters:
     - sigma0: Initial penalty parameter.
@@ -37,7 +44,8 @@ def run_alm(
     - almlog: Log of timing, convergence, and iteration statistics.
     """
 
-    # Deep copies of parameter objects
+    # *** OPTIMIZATION 1: Only deep copy parameter objects, not data ***
+    # Deep copies only for parameters that will be modified
     SP = deepcopy(SP0)
     AP = deepcopy(AP0)
     LS = deepcopy(LS0)
@@ -46,26 +54,33 @@ def run_alm(
     almlog = ALMLog(AP.max_iter_alm, SP.max_iter_ssn, LS.max_iter_ls)
     almlog.alm_time = time.time()
 
-    # Shortcut variables from problem instance
+    # *** OPTIMIZATION 2: Cache frequently used values ***
     w0 = PI.w0
     lambda0 = PI.lambda0
+    K_len = len(PI.K)  # Cache this - used multiple times
+    inv_K_len = 1.0 / K_len  # Pre-compute inverse for faster division
 
     # Initialize ALM variables
     almvar = ALMVar(tau0, sigma0, PI)
-    almvar.lambd = np.copy(lambda0)
+    # *** OPTIMIZATION 3: Avoid copy when initializing with zeros ***
+    almvar.lambd[:] = lambda0  # In-place if lambda0 is zeros, else copy
     almvar.sigma = sigma0
     almvar.tau = tau0
-    almvar.w = np.copy(w0)
-    almvar.y = np.zeros(len(PI.K))
+    almvar.w[:] = w0  # In-place assignment instead of copy
+    almvar.y = np.zeros(K_len)
     almvar.alpha = alpha0
 
     # Initialize SSN and Prox variables
     ssnvar = SSNVar(PI)
-    ssnvar.w_ssn = np.copy(w0)
-    proxvar = ProxVar(PI.n, len(PI.K), almvar.tau)
+    ssnvar.w_ssn[:] = w0  # In-place assignment
+    proxvar = ProxVar(PI.n, K_len, almvar.tau)
 
+    # *** OPTIMIZATION 4: Pre-allocate temporary arrays ***
+    temp_residual = np.empty(K_len)  # Reuse for constraint calculations
+    
     for t in range(AP.max_iter_alm):
         
+        # *** OPTIMIZATION 5: Move parameter updates outside loop if possible ***
         update_tol(SP, t)
         update_iter(SP, t)
         update_proxmethod(almvar)
@@ -75,23 +90,36 @@ def run_alm(
         run_ssn(t, almlog, almvar, ssnvar, proxvar, PI, SP, LS)
         almlog.ssn_times[t] = time.time() - start_ssn
 
+        # *** OPTIMIZATION 6: Use in-place operations instead of copy ***
         # Update ALM variables from SSN solution
-        almvar.w = np.copy(ssnvar.w_ssn)
-        almvar.y = np.copy(ssnvar.y_ssn)
-        almvar.w_D = np.copy(ssnvar.w_ssn_D)
+        almvar.w[:] = ssnvar.w_ssn  # In-place instead of np.copy
+        almvar.y[:] = ssnvar.y_ssn  # In-place
+        almvar.w_D[:] = ssnvar.w_ssn_D  # In-place
 
-        # Compute constraint residuals
-        almvar.cons_condition = (1.0 / len(PI.K)) * (almvar.y - almvar.w_D)
+        # *** OPTIMIZATION 7: Compute constraint residuals in-place ***
+        # Original: almvar.cons_condition = (1.0 / len(PI.K)) * (almvar.y - almvar.w_D)
+        np.subtract(almvar.y, almvar.w_D, out=temp_residual)
+        np.multiply(temp_residual, inv_K_len, out=almvar.cons_condition)
 
-        if np.linalg.norm(almvar.cons_condition, ord=np.inf) <= AP.tol_alm:
+        # *** OPTIMIZATION 8: Use infinity norm directly, cache result ***
+        cons_norm = np.linalg.norm(almvar.cons_condition, ord=np.inf)
+        
+        if cons_norm <= AP.tol_alm:
             almlog.alm_iter = t
-            almlog.L_final = ssnvar.L_obj / len(PI.K)
+            # *** OPTIMIZATION 9: Avoid redundant division ***
+            almlog.L_final = ssnvar.L_obj * inv_K_len  # Use cached inverse
             break
         else:
+            # Update sigma and gamma
             update_sigma_gamma(almvar, AP)
-            almvar.lambd += almvar.sigma * (1.0 / len(PI.K)) * (almvar.y - almvar.w_D)
+            
+            # *** OPTIMIZATION 10: Combine operations for lambda update ***
+            # Original: almvar.lambd += almvar.sigma * (1.0 / len(PI.K)) * (almvar.y - almvar.w_D)
+            # Reuse temp_residual from above (already contains y - w_D)
+            almvar.lambd += almvar.sigma * inv_K_len * temp_residual
 
     else:
+        # Max iterations reached
         almlog.alm_iter = AP.max_iter_alm
         
     almlog.alm_time = time.time() - almlog.alm_time

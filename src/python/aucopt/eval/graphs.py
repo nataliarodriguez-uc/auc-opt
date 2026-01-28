@@ -145,22 +145,37 @@ def plot_pca_projection(X, y, title="PCA Projection"):
     plt.tight_layout()
     plt.show()
 
-
-
-def evaluate_auc_on_test(w, PI, dataset_name="dataset", output_dir="results"):
+def evaluate_auc_on_test(w, X_test, y_test, target_class=1,
+                        dataset_name="dataset", output_dir="results"):
     """
-    Evaluates and plots AUC on the test set of a train/test ProblemInstance.
-    Also saves the ROC data and AUC value to CSV in the output directory.
+    Evaluate AUC on test data.
+    
+    Args:
+        w: Trained weight vector (d,)
+        X_test: Test features (d, n_test)
+        y_test: Test labels (n_test,)
+        target_class: Which class to evaluate (for multi-class)
+        dataset_name: Name for saving plots
+        output_dir: Where to save results
+    
+    Returns:
+        auc: AUC score on test set
     """
-    assert hasattr(PI, 'X_test'), "This function requires mode='train_test' in ProblemInstance."
-
-    # Compute scores and AUC
-    scores = w @ PI.X_test
-    y_true = PI.y_test
-    auc = roc_auc_score(y_true, scores)
-    fpr, tpr, _ = roc_curve(y_true, scores)
-
-    # Plot and save ROC figure
+    from sklearn.metrics import roc_auc_score, roc_curve
+    import matplotlib.pyplot as plt
+    import os
+    
+    # Create binary labels for target class
+    y_binary = (y_test == target_class).astype(int)
+    
+    # Compute scores
+    scores = w @ X_test
+    
+    # Compute AUC
+    auc = roc_auc_score(y_binary, scores)
+    fpr, tpr, _ = roc_curve(y_binary, scores)
+    
+    # Plot ROC curve
     plt.figure(figsize=(6, 5))
     plt.plot(fpr, tpr, label=f"AUC = {auc:.3f}")
     plt.plot([0, 1], [0, 1], linestyle='--', color='gray')
@@ -170,21 +185,22 @@ def evaluate_auc_on_test(w, PI, dataset_name="dataset", output_dir="results"):
     plt.legend()
     plt.grid(True)
     plt.tight_layout()
-
+    
+    # Save
     os.makedirs(output_dir, exist_ok=True)
     fig_path = os.path.join(output_dir, f"{dataset_name}_roc.png")
     plt.savefig(fig_path)
     plt.close()
-    print(f"Saved ROC plot to {fig_path}")
-
-    # Save AUC value to file
+    
     auc_csv_path = os.path.join(output_dir, f"{dataset_name}_auc.csv")
     with open(auc_csv_path, "w") as f:
         f.write("auc\n")
         f.write(f"{auc:.6f}\n")
-    print(f"Saved AUC value to {auc_csv_path}")
-
-    print(f"Test AUC for {dataset_name}: {auc:.4f}")
+    
+    print(f"✅ Test AUC for {dataset_name}: {auc:.4f}")
+    print(f"✅ Saved ROC plot to {fig_path}")
+    print(f"✅ Saved AUC value to {auc_csv_path}")
+    
     return auc
 
 def linear_indicator_approx(delta=1.0):

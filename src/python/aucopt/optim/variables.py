@@ -24,11 +24,11 @@ class ALMVar:
         self.tau = tau_init
         self.sigma = sigma_init
         self.gamma = 1.0 / sigma_init
-        self.w = np.random.randn(PI.n)
+        self.w = np.random.randn(PI.d)  
         self.y = np.zeros(len(PI.K))
         self.alpha = 1.0
         self.delta = 0.0
-        self.D_product = [np.outer(PI.D[:, k], PI.D[:, k]) for k in range(len(PI.K))]
+        #self.D_product = [np.outer(PI.D[:, k], PI.D[:, k]) for k in range(len(PI.K))]
         self.w_D = np.zeros(len(PI.K))
         self.prox_method_ssn = None  # to be assigned
         self.prox_method_ls = None
@@ -120,6 +120,17 @@ class SSNVar:
         self.alpha_ssn = 1.0
         self.w_ssn = np.zeros(PI.n)
         self.w_ls = np.zeros(PI.n)
+        self.y_ssn = np.zeros(len(PI.K))
+        self.w_ssn_D = np.zeros(len(PI.K))
+
+class SSNVar:
+    def __init__(self, PI):
+        self.L_obj = 0.0
+        self.L_grad = np.zeros(PI.d)      
+        self.L_hess = np.zeros((PI.d, PI.d))  
+        self.alpha_ssn = 1.0
+        self.w_ssn = np.zeros(PI.d)      
+        self.w_ls = np.zeros(PI.d)        
         self.y_ssn = np.zeros(len(PI.K))
         self.w_ssn_D = np.zeros(len(PI.K))
 
