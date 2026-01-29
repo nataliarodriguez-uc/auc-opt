@@ -1,8 +1,7 @@
 import numpy as np
 from aucopt.optim.prox import compute_prox_ls
-import time
 
-def compute_line_search(t, k, almlog, almvar, ssnvar, proxvar, d, PI, LS):
+def compute_line_search(t, k, almlog, almvar, ssnvar, proxvar, d, LS):
     
     """
     Performs backtracking line search to find a suitable step size along the Newton direction.
@@ -17,7 +16,6 @@ def compute_line_search(t, k, almlog, almvar, ssnvar, proxvar, d, PI, LS):
     - ssnvar: SSNVar object containing Newton direction state.
     - proxvar: ProxVar object storing proximal-related variables.
     - d: Newton direction vector.
-    - PI: ProblemInstance with data and pairwise differences.
     - LS: LineSearchParameters object with backtracking rules.
 
     Modifies:
@@ -36,7 +34,7 @@ def compute_line_search(t, k, almlog, almvar, ssnvar, proxvar, d, PI, LS):
         ssnvar.w_ls = ssnvar.w_ssn + alpha_ls * d
         proxvar.w_ls_D = ssnvar.w_ssn_D + alpha_ls * proxvar.d_D
         
-        L_new = compute_prox_ls(proxvar.w_ls_D, almvar, proxvar, PI)
+        L_new = compute_prox_ls(proxvar.w_ls_D, almvar)
         
         # Armijo condition
         if L_new - L_current <= armijo_threshold * alpha_ls:

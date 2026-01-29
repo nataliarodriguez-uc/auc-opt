@@ -33,7 +33,6 @@ class ALMVar:
         self.prox_method_ssn = None  # to be assigned
         self.prox_method_ls = None
 
-
 class ALMParameters:
     
     """
@@ -66,18 +65,18 @@ class ProxVar:
     - prox_time: time spent in prox evaluations
     """
     
-    def __init__(self, n, K, tau):
+    def __init__(self, d, K, tau):
         self.y = np.zeros(K)
         self.Lprox = np.zeros(K)
-        self.Jprox = np.zeros((n, K))
-        self.Hprox = [np.zeros((n, n)) for _ in range(K)]
-        self.Hprox_diag = tau * np.eye(n)
+        self.Jprox = np.zeros((d, K))
+        self.Hprox = [np.zeros((d, d)) for _ in range(K)]
+        self.Hprox_diag = tau * np.eye(d)
         self.w_ls_D = np.zeros(K)
         self.d_D = np.zeros(K)
         self.w_Dij = np.zeros(K)
         self.Lag_obj = 0.0
-        self.Lag_J = np.zeros(n)
-        self.Lag_H = np.zeros((n, n))
+        self.Lag_J = np.zeros(d)
+        self.Lag_H = np.zeros((d, d))
         self.prox_time = 0.0
 
 
@@ -115,22 +114,11 @@ class SSNVar:
     
     def __init__(self, PI):
         self.L_obj = 0.0
-        self.L_grad = np.zeros(PI.n)
-        self.L_hess = np.zeros((PI.n, PI.n))
+        self.L_grad = np.zeros(PI.d)
+        self.L_hess = np.zeros((PI.d, PI.d))
         self.alpha_ssn = 1.0
-        self.w_ssn = np.zeros(PI.n)
-        self.w_ls = np.zeros(PI.n)
-        self.y_ssn = np.zeros(len(PI.K))
-        self.w_ssn_D = np.zeros(len(PI.K))
-
-class SSNVar:
-    def __init__(self, PI):
-        self.L_obj = 0.0
-        self.L_grad = np.zeros(PI.d)      
-        self.L_hess = np.zeros((PI.d, PI.d))  
-        self.alpha_ssn = 1.0
-        self.w_ssn = np.zeros(PI.d)      
-        self.w_ls = np.zeros(PI.d)        
+        self.w_ssn = np.zeros(PI.d)
+        self.w_ls = np.zeros(PI.d)
         self.y_ssn = np.zeros(len(PI.K))
         self.w_ssn_D = np.zeros(len(PI.K))
 

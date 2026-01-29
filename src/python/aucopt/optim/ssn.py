@@ -77,7 +77,7 @@ def run_ssn(t, almlog, almvar, ssnvar, proxvar, PI, SP, LS):
             proxvar.d_D = PI.D.T @ d
 
             # (10) Line search
-            compute_line_search(t, k, almlog, almvar, ssnvar, proxvar, d, PI, LS)
+            compute_line_search(t, k, almlog, almvar, ssnvar, proxvar, d, LS)
             almlog.lsearch_allocs[t] += 0
 
         # (11) Primal update - use in-place operations

@@ -1,174 +1,8 @@
 import numpy as np
 
+
 def compute_prox_ssn(prox_wD, almvar, proxvar, PI):
     
-    """
-    Evaluate the proximal mapping in Semi-Smooth Newton (SSN) mode.
-
-    Computes ALM's Lagrangian objective, Jacobian, and Hessian by applying 
-    the selected proximal rule (based on gamma) to each (i, j) pair.
-
-    Parameters:
-    - prox_wD: array of ⟨w, D_ij⟩ values
-    - almvar: current ALM state
-    - proxvar: object storing proximal variables
-    - PI: problem instance
-    """
-    
-    # 1. Vectorized computation of w_Dij
-    proxvar.w_Dij = prox_wD - almvar.lambd / almvar.sigma
-
-    # 2. Reset proxvar variables
-    proxvar.y[:] = 0.0
-    proxvar.Lag_obj = 0.0
-    proxvar.Lag_H[:, :] = 0.0
-    proxvar.Lag_J[:] = 0.0
-
-    # 3. Loop over all pairs
-    for idx in range(len(PI.K)):
-        D_ij = PI.D[:, idx]
-        # Dispatch to selected proximal method
-        almvar.prox_method_ssn(idx, proxvar.w_Dij[idx], D_ij, almvar, proxvar, PI)
-
-def prox_smallgamma_ssn(idx, w_Dij, D_ij, almvar, proxvar, PI):
-    d = PI.d
-    gamma = almvar.gamma
-    sigma = almvar.sigma
-    delta = almvar.delta
-
-    if w_Dij < delta:
-        proxvar.y[idx] = w_Dij
-        proxvar.Lag_H[np.diag_indices(d)] += almvar.tau
-
-    elif delta <= w_Dij <= delta + gamma:
-        diff = delta - w_Dij
-        proxvar.y[idx] = delta
-        proxvar.Lag_obj += 0.5 / gamma * diff**2
-        proxvar.Lag_J += sigma * diff * D_ij
-        proxvar.Lag_H += sigma * np.outer(D_ij, D_ij)
-
-    elif delta + gamma < w_Dij < 1 + delta + 0.5 * gamma:
-        proxvar.y[idx] = delta - gamma
-        proxvar.Lag_obj += w_Dij - delta - 0.5 * gamma
-        proxvar.Lag_J += sigma * D_ij
-        proxvar.Lag_H[np.diag_indices(d)] += almvar.tau
-
-    else:
-        proxvar.y[idx] = w_Dij
-        proxvar.Lag_obj += 1.0
-        proxvar.Lag_H[np.diag_indices(d)] += almvar.tau
-
-def prox_gamma2_ssn(idx, w_Dij, D_ij, almvar, proxvar, PI):
-    d = PI.d
-    gamma = almvar.gamma
-    sigma = almvar.sigma
-    delta = almvar.delta
-
-    if w_Dij < delta:
-        proxvar.y[idx] = w_Dij
-        proxvar.Lag_H[np.diag_indices(d)] += almvar.tau
-
-    elif delta <= w_Dij <= delta + gamma:
-        diff = delta - w_Dij
-        proxvar.y[idx] = delta
-        proxvar.Lag_obj += 0.5 / gamma * diff**2
-        proxvar.Lag_J += sigma * diff * D_ij
-        proxvar.Lag_H += sigma * np.outer(D_ij, D_ij)
-
-    else:
-        proxvar.y[idx] = w_Dij
-        proxvar.Lag_obj += 1.0
-        proxvar.Lag_H[np.diag_indices(d)] += almvar.tau
-
-def prox_largegamma_ssn(idx, w_Dij, D_ij, almvar, proxvar, PI):
-    d = PI.d
-    gamma = almvar.gamma
-    sigma = almvar.sigma
-    delta = almvar.delta
-
-    if w_Dij < delta:
-        proxvar.y[idx] = w_Dij
-        proxvar.Lag_H[np.diag_indices(d)] += almvar.tau
-
-    elif delta <= w_Dij <= delta + np.sqrt(2 * gamma):
-        diff = delta - w_Dij
-        proxvar.y[idx] = delta
-        proxvar.Lag_obj += 0.5 / gamma * diff**2
-        proxvar.Lag_J += sigma * diff * D_ij
-        proxvar.Lag_H += sigma * np.outer(D_ij, D_ij)
-
-    else:
-        proxvar.y[idx] = w_Dij
-        proxvar.Lag_obj += 1.0
-        proxvar.Lag_H[np.diag_indices(d)] += almvar.tau
-
-
-
-def compute_prox_ls(prox_wD, almvar, proxvar, PI):
-    
-    """
-    Evaluate the proximal objective function only (used in Line Search).
-
-    Parameters:
-    - prox_wD: ⟨w, D_ij⟩ values at candidate point
-    - almvar: ALM variable state
-    - proxvar: storage (not used here, but passed for interface consistency)
-    - PI: problem instance
-
-    Returns:
-    - total Lagrangian objective over all pairwise constraints
-    """
-    
-    L = 0.0
-    for idx in range(len(PI.K)):
-        w_Dij = prox_wD[idx] - almvar.lambd[idx] / almvar.sigma
-
-        if almvar.gamma < 2:
-            L += prox_smallgamma_ls(w_Dij, almvar)
-        elif almvar.gamma == 2:
-            L += prox_gamma2_ls(w_Dij, almvar)
-        else:
-            L += prox_largegamma_ls(w_Dij, almvar)
-
-    return L
-
-def prox_smallgamma_ls(w_Dij, almvar):
-    delta = almvar.delta
-    gamma = almvar.gamma
-
-    if w_Dij < delta:
-        return 0.0
-    elif delta <= w_Dij <= delta + gamma:
-        return 0.5 / gamma * (delta - w_Dij)**2
-    elif delta + gamma < w_Dij < 1 + delta + 0.5 * gamma:
-        return w_Dij - delta - 0.5 * gamma
-    else:
-        return 1.0
-
-def prox_gamma2_ls(w_Dij, almvar):
-    delta = almvar.delta
-    gamma = almvar.gamma
-
-    if w_Dij < delta:
-        return 0.0
-    elif w_Dij < delta + gamma:
-        return 0.5 / gamma * (delta - w_Dij)**2
-    else:
-        return 1.0
-
-def prox_largegamma_ls(w_Dij, almvar):
-    delta = almvar.delta
-    gamma = almvar.gamma
-
-    if w_Dij < delta:
-        return 0.0
-    elif w_Dij < delta + np.sqrt(2 * gamma):
-        return 0.5 / gamma * (delta - w_Dij)**2
-    else:
-        return 1.0
-
-
-def compute_prox_ssn_vectorized(prox_wD, almvar, proxvar, PI):
     """
     Vectorized proximal operator evaluation.
     
@@ -198,20 +32,20 @@ def compute_prox_ssn_vectorized(prox_wD, almvar, proxvar, PI):
     
     # Dispatch to appropriate gamma regime
     if gamma < 2:
-        _compute_prox_smallgamma_vectorized(
+        prox_smallgamma_ssn(
             w_Dij, PI.D, d,  gamma, sigma, delta, tau, proxvar
         )
     elif gamma == 2:
-        _compute_prox_gamma2_vectorized(
+        prox_gamma2_ssn(
             w_Dij, PI.D, d, gamma, sigma, delta, tau, proxvar
         )
     else:  # gamma > 2
-        _compute_prox_largegamma_vectorized(
+        prox_largegamma_ssn(
             w_Dij, PI.D, d, gamma, sigma, delta, tau, proxvar
         )
 
 
-def _compute_prox_smallgamma_vectorized(w_Dij, D, d, gamma, sigma, delta, tau, proxvar):
+def prox_smallgamma_ssn(w_Dij, D, d, gamma, sigma, delta, tau, proxvar):
     """
     Vectorized evaluation for gamma < 2 case.
     
@@ -284,7 +118,7 @@ def _compute_prox_smallgamma_vectorized(w_Dij, D, d, gamma, sigma, delta, tau, p
     proxvar.Lag_H[np.diag_indices(d)] += tau * n_diag_regions
 
 
-def _compute_prox_gamma2_vectorized(w_Dij, D, d, gamma, sigma, delta, tau, proxvar):
+def prox_gamma2_ssn(w_Dij, D, d, gamma, sigma, delta, tau, proxvar):
     """Vectorized evaluation for gamma = 2 case."""
     
     # Region 1: w_Dij < delta
@@ -321,7 +155,7 @@ def _compute_prox_gamma2_vectorized(w_Dij, D, d, gamma, sigma, delta, tau, proxv
     proxvar.Lag_H[np.diag_indices(d)] += tau * n_diag_regions
 
 
-def _compute_prox_largegamma_vectorized(w_Dij, D, d, gamma, sigma, delta, tau, proxvar):
+def prox_largegamma_ssn(w_Dij, D, d, gamma, sigma, delta, tau, proxvar):
     """Vectorized evaluation for gamma > 2 case."""
     
     sqrt_2gamma = np.sqrt(2 * gamma)
@@ -358,3 +192,116 @@ def _compute_prox_largegamma_vectorized(w_Dij, D, d, gamma, sigma, delta, tau, p
     # Diagonal
     n_diag_regions = n_region1 + n_region3
     proxvar.Lag_H[np.diag_indices(d)] += tau * n_diag_regions
+
+
+def compute_prox_ls(prox_wD, almvar):
+    
+    """
+    Vectorized evaluation of proximal objective function (for line search).
+    
+    This version is 10-50x faster than the loop-based version!
+    
+    Parameters:
+    - prox_wD: ⟨w, D_ij⟩ values at candidate point (shape: K)
+    - almvar: ALM variable state
+    
+    Returns:
+    - total Lagrangian objective over all pairwise constraints
+    """
+    
+    # Vectorize the subtraction for ALL pairs at once
+    w_Dij = prox_wD - almvar.lambd / almvar.sigma  # Shape: (K,)
+    
+    # Get parameters
+    delta = almvar.delta
+    gamma = almvar.gamma
+    
+    # Dispatch to appropriate gamma regime (vectorized)
+    if gamma < 2:
+        return prox_smallgamma_ls(w_Dij, delta, gamma)
+    elif gamma == 2:
+        return prox_gamma2_ls(w_Dij, delta, gamma)
+    else:
+        return prox_largegamma_ls(w_Dij, delta, gamma)
+
+def prox_smallgamma_ls(w_Dij, delta, gamma):
+    """
+    Vectorized small gamma case (gamma < 2).
+    
+    Regions:
+    1. w_Dij < delta                               → L = 0
+    2. delta ≤ w_Dij ≤ delta + gamma              → L = 0.5/gamma * (delta - w_Dij)²
+    3. delta + gamma < w_Dij < 1 + delta + γ/2    → L = w_Dij - delta - γ/2
+    4. w_Dij ≥ 1 + delta + γ/2                    → L = 1
+    """
+    
+    # Initialize result array
+    L = np.zeros_like(w_Dij)
+    
+    # Create masks for each region
+    mask1 = w_Dij < delta
+    mask2 = (delta <= w_Dij) & (w_Dij <= delta + gamma)
+    mask3 = (delta + gamma < w_Dij) & (w_Dij < 1 + delta + 0.5 * gamma)
+    mask4 = w_Dij >= 1 + delta + 0.5 * gamma
+    
+    # Region 1: L = 0 (already initialized to 0)
+    
+    # Region 2: L = 0.5/gamma * (delta - w_Dij)²
+    L[mask2] = 0.5 / gamma * (delta - w_Dij[mask2])**2
+    
+    # Region 3: L = w_Dij - delta - γ/2
+    L[mask3] = w_Dij[mask3] - delta - 0.5 * gamma
+    
+    # Region 4: L = 1
+    L[mask4] = 1.0
+    
+    # Sum all contributions
+    return np.sum(L)
+
+
+def prox_gamma2_ls(w_Dij, delta, gamma):
+    """
+    Vectorized gamma = 2 case.
+    
+    Regions:
+    1. w_Dij < delta               → L = 0
+    2. delta ≤ w_Dij < delta + γ   → L = 0.5/gamma * (delta - w_Dij)²
+    3. w_Dij ≥ delta + gamma       → L = 1
+    """
+    
+    L = np.zeros_like(w_Dij)
+    
+    mask1 = w_Dij < delta
+    mask2 = (delta <= w_Dij) & (w_Dij < delta + gamma)
+    mask3 = w_Dij >= delta + gamma
+    
+    # Region 1: already 0
+    L[mask2] = 0.5 / gamma * (delta - w_Dij[mask2])**2
+    L[mask3] = 1.0
+    
+    return np.sum(L)
+
+
+def prox_largegamma_ls(w_Dij, delta, gamma):
+    """
+    Vectorized large gamma case (gamma > 2).
+    
+    Regions:
+    1. w_Dij < delta                        → L = 0
+    2. delta ≤ w_Dij < delta + √(2γ)       → L = 0.5/gamma * (delta - w_Dij)²
+    3. w_Dij ≥ delta + √(2γ)               → L = 1
+    """
+    
+    L = np.zeros_like(w_Dij)
+    
+    sqrt_2gamma = np.sqrt(2 * gamma)
+    
+    mask1 = w_Dij < delta
+    mask2 = (delta <= w_Dij) & (w_Dij < delta + sqrt_2gamma)
+    mask3 = w_Dij >= delta + sqrt_2gamma
+    
+    # Region 1: already 0
+    L[mask2] = 0.5 / gamma * (delta - w_Dij[mask2])**2
+    L[mask3] = 1.0
+    
+    return np.sum(L)

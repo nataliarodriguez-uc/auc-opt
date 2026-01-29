@@ -4,7 +4,6 @@ from copy import deepcopy
 from matplotlib import pyplot as plt
 from aucopt.optim.alm import run_alm
 from aucopt.data.problem_instance import ProblemInstance
-from aucopt.optim.variables import ALMParameters, SSNParameters, LineSearchParameters
 
 def run_prox_sgd_on_dataset(
     ds,
