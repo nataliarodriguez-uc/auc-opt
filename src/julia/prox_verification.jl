@@ -1,5 +1,4 @@
 using LinearAlgebra, Test
-include("prox.jl")
 
 f_prox_obj(x, delta, gamma; x0=+Inf) = min.(1,max.(0,x.-delta)) + (x-x0)^2/(2gamma)
 f_prox(t::T, delta::T, gamma::T) where {T<:Real} = begin

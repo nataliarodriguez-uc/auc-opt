@@ -25,10 +25,9 @@ This project develops **proximal optimization methods** specifically designed fo
 3. **Augmented Lagrangian Method (ALM)** + **Semi-Smooth Newton (SSN)** framework for efficient solving
 4. **Controlled pairwise sampling** that reduces complexity from $O(n^2)$ to $O(n \cdot k)$ where k is a subset of pairs per sample used
 
-**Key innovation**: Our methodology and analysis reveals that proximal operator parameters are proportional to the Augmented Lagrangian parameters ($\sigma = 1 / \gamma$). (Need more here...)
+**Key innovation**: Our methodology and analysis reveals that proximal operator parameters are proportional to the Augmented Lagrangian parameters ($\sigma = 1 / \gamma$). 
 
 ### Connection to Contrastive Learning
-
 
 **Binary Contrastive Learning** (current implementation):
 - Pull similar samples (same class) together, push dissimilar samples (different classes) apart
@@ -73,10 +72,6 @@ Our formulation **naturally handles multi-class** settings since:
 | High separation, few samples | 50×500 | **100%** | 100% | 0%* |
 | High separation, many samples | 1000×50 | **99.94%** | 100% | 100% |
 
-*LibAUC completely fails in high-dimensional, low-sample regime where our method achieves perfect AUC.
-
-**Key Finding**: $\sigma = 1.0$ provides robust performance across all scenarios. Method excels when features >> samples, a challenging regime for standard approaches.
-
 ---
 
 ## Quick Start
@@ -96,33 +91,6 @@ tbd
 ### Basic Usage
 
 tbd
-
----
-
-## Repository Structure
-
-```
-auc-opt/
-├── demos/                      # Demo notebooks and examples
-│   └── svm_example.ipynb       # SMV example notebook
-├── docs/                       # Detailed documentation
-│   ├── 1_overview.md           # Problem motivation & X-risk background
-│   ├── 2_algorithm.md          # Mathematical formulation
-│   ├── 3_optimization.md       # Proximal methods & ALM details
-│   ├── 4_experiments.md        # Experimental design & analysis
-│   └── 5_math_appendix.md      # Derivations & proofs
-├── src/                        # Core implementation
-│   ├── julia/                  # Julia optimization routines
-│   └── python/                 # Python implementation
-│       └── aucopt/             # Main package
-│           ├── data/           # Data loading utilities
-│           ├── eval/           # Evaluation metrics
-│           ├── optim/          # Optimization algorithms (ALM, SSN)
-│           └── __init__.py
-├── .gitignore
-├── README.md
-└── requirements.txt
-```
 
 ---
 
@@ -153,7 +121,6 @@ auc-opt/
   - $\gamma < 2$: Sharp transitions, stable convergence
   - $\gamma = 2$: Subdifferential at boundary
   - $\gamma > 2$: Wider non-differentiable region
-- Empirical finding: $\sigma = 1.0$ ($\gamma = 1.0$) optimal across problem types
 
 **Augmented Lagrangian Decomposition**:
 - Introduce auxiliary variables $y_{ij} = w^\top(z_j - z_i)$ for each pair
