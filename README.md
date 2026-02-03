@@ -209,7 +209,7 @@ This methodology applies to:
 - Khanh, P. D., Mordukhovich, B. S., & Phat, V. T. (2022). *A generalized Newton method for subgradient systems*
 - Li, X., Sun, D., & Toh, K.-C. (2018). *A highly efficient semismooth Newton augmented Lagrangian method for solving LASSO problems*
 - Tian, L., & So, A. M.-C. (2022). *Computing d-stationary points of ρ-margin loss SVM*
-  
+
 ---
 
 ## Authors

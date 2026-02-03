@@ -176,5 +176,54 @@ These considerations motivate:
 
 ---
 
-Readers interested in full implementation details are encouraged to
-consult the source code alongside this appendix.
+**Supervised Contrastive Learning:**
+
+For multi-class classification where each sample has a class label:
+
+- **Dataset**: $S = \{(z_1, y_1), \ldots, (z_n, y_n)\}$ (all labeled samples)
+- **Positive set**: For sample $z_i$ with label $y_i$, define $S_i^+ = \{z_j \in S : y_j = y_i, j \neq i\}$ (same class)
+- **Negative set**: Define $S_i^- = \{z_j \in S : y_j \neq y_i\}$ (different classes)
+- **Aggregation**: $g(w, z_i, S_i^+, S_i^-) = -\log \frac{\sum_{z_j \in S_i^+} \exp(\text{sim}(z_i, z_j)/\tau)}{\sum_{z_k \in S_i^+ \cup S_i^-} \exp(\text{sim}(z_i, z_k)/\tau)}$
+- **Risk measure**: $f_i(g) = g$ (minimize negative log-likelihood of correct grouping)
+
+where $\text{sim}(z_i, z_j) = w^\top(z_i \cdot z_j)$ or other similarity measures.
+
+---
+
+**Ranking (Mean Average Precision):**
+
+For information retrieval with query $q$ and document set $\mathcal{D}$:
+
+- **Dataset**: $S = \{(d_1, r_1), \ldots, (d_n, r_n)\}$ (documents with relevance scores for query $q$)
+- **Relevant set**: Define $\mathcal{R} = \{d_i : r_i > 0\}$ (relevant documents)
+- **Comparison set**: For each relevant document $d_i \in \mathcal{R}$, define $S_i = \mathcal{D}$ (all documents)
+- **Aggregation**: $g(w, d_i, S_i) = \text{rank}(d_i | w) = |\{d_j \in S_i : w^\top d_i < w^\top d_j\}|$ (position in ranking)
+- **Risk measure**: $f_i(g) = \frac{|\{d_j \in \mathcal{R} : \text{rank}(d_j | w) \leq g\}|}{g}$ (precision at position $g$)
+
+The X-Risk objective:
+$$
+\min_w -\frac{1}{|\mathcal{R}|} \sum_{d_i \in \mathcal{R}} \text{Precision}@\text{rank}(d_i | w)
+$$
+
+---
+
+**Common Structure:**
+
+In all three cases, the loss for sample $z_i$ is defined by:
+1. Identifying a **comparison set** $S_i$ of related samples
+2. **Aggregating** information across these comparisons: $g(w, z_i, S_i)$
+3. Applying a **risk measure** $f_i(\cdot)$ to the aggregated result
+
+The optimization objective has the unified form:
+$$
+\min_{w \in \mathcal{X}} \frac{1}{|S|} \sum_{z_i \in S} f_i\Big(g(w, z_i, S_i)\Big)
+$$
+
+This structure is **fundamentally different from ERM**, which would require:
+$$
+\min_{w \in \mathcal{X}} \frac{1}{|S|} \sum_{z_i \in S} \ell(w, z_i)
+$$
+
+where each sample's loss is computed **independently**.
+
+---
