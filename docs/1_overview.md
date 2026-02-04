@@ -59,9 +59,9 @@ AUC as a performance metric becomes necessary in several classification modeling
 - Limited intervention budget (customer retention)
 - Must prioritize: who to screen first, who to contact, what to inspect
 
-In these settings, optimizing cross-entropy (which targets a fixed threshold) can produce models with high accuracy but poor ranking quality—missing the actual objective.
+In these settings, optimizing cross-entropy (which targets a fixed threshold) can produce models with high accuracy but poor ranking quality, missing the actual objective.
 
-Similar to the structure of AUC metrics, pairwise ranking objectives can expand to other applications. The following problems also depend on the relationships between samples rather than independent evaluations. 
+Similar to the structure of AUC metrics, pairwise ranking objectives can expand to other applications. The following problems also depend on the relationships between samples rather than independent evaluations:
 
 **Ranking metrics** (information retrieval):
 - Precision@K: Only the top K predictions matter
@@ -76,7 +76,7 @@ Similar to the structure of AUC metrics, pairwise ranking objectives can expand 
 **Fairness constraints**:
 - Equal opportunity: TPR should be equal across groups
 - Equalized odds: Both TPR and FPR equal across groups
-- These compare **subgroup statistics**, not individual predictions
+- These compare subgroup statistics, not individual predictions
 
 ---
 
@@ -114,13 +114,13 @@ $$
 
 - **Non-Smoothness:** AUC uses the indicator function:
 
-$
+$$
 \mathbb{1}(w^\top x_i > w^\top x_j) = 
 \begin{cases}
 1 & \text{if } w^\top x_i > w^\top x_j \\
 0 & \text{otherwise}
 \end{cases}
-$
+$$
 
 which is both non-differentiable $w^\top x_i = w^\top x_j$ and non-continuous (small changes in $w$ cause discrete jumps).
 
@@ -135,10 +135,10 @@ which is both non-differentiable $w^\top x_i = w^\top x_j$ and non-continuous (s
 **Our Approach: Piecewise Linear Surrogates:**
 - Replace $\mathbb{1}(t)$ with $\ell_\delta(t) = \min(1, \max(0, t - \delta))$
 - Still non-smooth at the breakpoints but piecewise linear
-- Enables proximal operators with closed-form solutions that handle non-smoothness directly
+- Enables proximal operators with that handle non-smoothness directly
 - Fisher consistent: Converges to true AUC as new parameter $\delta \to 0$
 - **When it excels**: Linear models, direct feature optimization, settings where theoretical guarantees matter
-- - **Trade-off**: Requires parameter studies to assure algorithm convergence. 
+- **Trade-off**: Requires parameter studies to assure algorithm convergence. 
 
 Smooth approaches eliminate non-smoothness to fit standard methods. Piecewise linear approaches preserve the non-smooth structure and require specialized methods (proximal operators, ALM) designed to handle it directly. Both approaches are valid, since they optimize different trade-offs between computational convenience and theoretical precision.
 
@@ -153,19 +153,21 @@ Rather than adapting these problems to fit standard gradient-based frameworks, w
 **1. Piecewise Linear Surrogate with Proximal Operators**
 
 Replace the indicator $\mathbb{1}(t)$ with tractable surrogate:
+
 $$
 \ell_\delta(t) = \min(1, \max(0, t - \delta))
 $$
 
 - **Piecewise linear** (not smooth!), but enables closed-form proximal operators
 - **Fisher consistent**: Converges to true indicator as $\delta \to 0$
-- **Proximal operator** $\text{prox}_{\gamma \ell_\delta}(x)$ has **explicit solutions** depending on $\gamma = 1/\sigma$
+- **Proximal operator** $\text{prox}_{\gamma \ell_\delta}(x)$ has explicit solutions depending on $\gamma = 1/\sigma$
   - Handles non-smoothness directly without smoothing
   - γ-dependent analysis reveals $\sigma = 1.0$ is optimal across problem geometries
 
 **2. Augmented Lagrangian Decomposition**
 
 Introduce auxiliary variables to separate the non-smooth objective from pairwise constraints:
+
 $$
 \min_{w,y} \sum_{i,j} \ell_\delta(y_{ij}) \quad \text{subject to} \quad y_{ij} = w^\top(z_j - z_i)
 $$
@@ -183,26 +185,22 @@ Reduce computational cost from $O(n^2)$ to $O(n \cdot k)$:
 
 ### Connection to Other Pairwise Objectives
 
-The piecewise linear surrogate and proximal operator framework is **problem-agnostic**—it handles the non-smoothness arising from any indicator-based pairwise objective. All these objectives evaluate **relationships between samples** rather than individual sample properties. Examples include the following. 
+The piecewise linear surrogate and proximal operator framework is problem-agnostic, it handles the non-smoothness arising from any indicator-based pairwise objective. All these objectives evaluate relationships between samples rather than individual sample properties. Examples include the following:
 
-**Contrastive Learning**:
-- Compare each sample to positive examples (same class) vs. negative examples (different classes)
+**Contrastive Learning**: Compare each sample to positive examples (same class) vs. negative examples (different classes).
 - **Binary case**: Equivalent to AUC optimization when embeddings are 1-dimensional
 - **Multi-class case**: Decompose via one-vs-rest or pairwise class comparisons
 
-**Average Precision (AP)**:
+**Average Precision (AP)**: For each relevant document, measure precision at its rank position.
 - Ranking metric for information retrieval
-- For each relevant document, measure precision at its rank position
 - Optimization requires pairwise comparisons to establish ranking order
 
-**Precision@K**:
+**Precision@K**: Requires ranking all samples, then selecting top-K.
 - Only top-K predictions matter
-- Requires ranking all samples, then selecting top-K
 - Naturally formulated as pairwise ranking constraints
 
-**Learning to Rank (LTR)**:
+**Learning to Rank (LTR)**: All depend on relative ordering of items.
 - NDCG, MRR, and other ranking metrics
-- All depend on relative ordering of items
 - Pairwise or listwise comparison structure
 
 ---
@@ -211,7 +209,7 @@ The piecewise linear surrogate and proximal operator framework is **problem-agno
 
 We provide rigorous optimization theory for the most widely deployed class of AUC models (**linear scoring functions**), with principled extensions to kernel methods. This complements recent deep learning approaches (LibAUC) which sacrifice theoretical guarantees for representation power.
 
-Linear models dominate AUC applications due to ranking being fundemantally ordinal, i.e. AUC only cares whether $f(x^+) > f(x^-)$ in any magnitude. Additionally, *linear functions provide sufficient ranking capacity for many problems* and complex nonlinearities don't necessarily improve ranking quality proportionally to the computational cost. Many medical problems feature response variables that act as linear combinations of biomarker elevations, as well as fair lending laws where FICO scores are linearly dependent on credit factors. AUC acts as a key metric in linear models where teams need actionable rules that are easy to interpret provide flexibility. 
+Linear models dominate AUC applications due to ranking being fundemantally ordinal, i.e. AUC only cares whether $f(x^+) > f(x^-)$ in any magnitude. Additionally, **linear functions provide sufficient ranking capacity** for many problems and complex nonlinearities don't necessarily improve ranking quality proportionally to the computational cost. Many medical problems feature response variables that act as linear combinations of biomarker elevations, as well as fair lending laws where FICO scores are linearly dependent on credit factors. AUC acts as a key metric in linear models where teams need actionable rules that are easy to interpret provide flexibility. 
 
 ### What We Provide
 
@@ -250,28 +248,16 @@ Linear models dominate AUC applications due to ranking being fundemantally ordin
 
 **Extensions:**
 - **Kernel methods**: $f(x) = w^\top \phi(x)$ with nonlinear feature maps
-  - Still linear in $w$, proximal methods apply directly
-  - Maintains convexity and convergence guarantees
-  - Can use kernel trick for computational efficiency
+  - Still linear in $w$, proximal methods apply directly, maintains convergence guarantees and can use kernel trick for computational efficiency.
   
-- **Engineered features**: Polynomial expansions, interaction terms, domain transformations
-  - Transform $x \to \phi(x)$, then apply linear model
-  - Framework unchanged, just operates in transformed space
+- **Engineered features**: Polynomial expansions, interaction terms, domain transformations from $x \to \phi(x)$ to then apply linear models. 
   
-- **Multi-class AUC**: One-vs-rest or pairwise class decompositions
-  - Binary solver applied $C$ times for $C$ classes
-  - Or solve $\binom{C}{2}$ pairwise problems
+- **Multi-class AUC**: One-vs-rest or pairwise class decompositions can either implement binary solver applied $C$ times for $C$ classes or solve $\binom{C}{2}$ pairwise problems
   
 - **Other pairwise objectives**: Average Precision (AP), Precision@K, ranking metrics
-  - Same pairwise comparison structure
-  - Proximal operators adapt to different indicator-based losses
 
-**Future Directions (require new analysis):**
+**Future Directions:**
 - **Neural networks**: $f_\theta(x)$ with deep architectures
-  - Introduces nonconvex subproblems (nonlinear in $\theta$)
-  - Would need modified convergence analysis
-  - Proximal operators still apply to output layer, but backpropagation complicates ALM framework
-  
 - **Large-scale deployment**: Integration with PyTorch/JAX as custom loss functions
 - **Self-supervised contrastive learning**: Extension beyond supervised binary/multi-class settings
 - **Real-world medical/financial datasets**: Application domains requiring interpretability
@@ -280,9 +266,9 @@ Linear models dominate AUC applications due to ranking being fundemantally ordin
 
 ## Document Roadmap
 
-This overview establishes **why** specialized methods are needed for pairwise objectives. The remaining documents cover:
+The remaining documents cover:
 
-2. **[Algorithm Formulation](2_algorithm.md)** - Mathematical details of the optimization problem
-3. **[Optimization Methods](3_optimization.md)** - Proximal operators, ALM, SSN solver
-4. **[Experiments](4_experiments.md)** - Empirical validation and results
-5. **[Mathematical Appendix](5_math_appendix.md)** - Complete derivations and proofs
+1. **[Algorithm Formulation](2_algorithm.md)** - Mathematical details of the optimization problem
+2. **[Optimization Methods](3_optimization.md)** - Proximal operators, ALM, SSN solver
+3. **[Experiments](4_experiments.md)** - Empirical validation and results
+4. **[Mathematical Appendix](5_math_appendix.md)** - Complete derivations and proofs
