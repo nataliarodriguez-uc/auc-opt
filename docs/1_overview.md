@@ -160,7 +160,7 @@ $$
 
 - **Piecewise linear** (not smooth!), but enables closed-form proximal operators
 - **Fisher consistent**: Converges to true indicator as $\delta \to 0$
-- **Proximal operator** $\text{prox}_{\gamma \ell_\delta}(x)$ has explicit solutions depending on $\gamma = 1/\sigma$
+- **Proximal operator** $ \text{prox}_{\gamma \ell_\delta}(x)$ has explicit solutions depending on $\gamma = 1/\sigma$
   - Handles non-smoothness directly without smoothing
   - γ-dependent analysis reveals $\sigma = 1.0$ is optimal across problem geometries
 
@@ -230,12 +230,10 @@ Linear models dominate AUC applications due to ranking being fundemantally ordin
   - Low/high separation scenarios
   - Varying dimensionality: $m \gg n$ and $m \ll n$
   - Hyperparameter sensitivity: $\sigma \in \{0.1, 1.0, 2.0\}$
-  - **Key finding**: Method excels in high-dimensional, low-sample regimes where baselines fail
   
 - **CIFAR-10 binary classification**: Real-world validation
   - Balanced and imbalanced class distributions (1:1 and 1:9 ratios)
   - Comparison against BCE and LibAUC baselines
-  - Competitive performance: 97.75% AUC (vs. 98.08% LibAUC baseline) on imbalanced data
 
 ---
 

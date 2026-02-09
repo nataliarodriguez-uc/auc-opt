@@ -1,82 +1,63 @@
-# Efficient Proximal Optimization for Non-Smooth AUC Maximization
+# Pairwise Proximal Methods for Direct AUC Optimization
 
-> This project develops efficient training optimization algorithms for direct AUC maximization using proximal gradients and augmented Lagrangian methods.
+Efficient optimization algorithms for direct AUC maximization using piecewise linear approximations.
 
----
+## The Problem
 
-## Overview
+Most deep learning optimizes cross-entropy loss, but this doesn't align with what we actually care about in many real applications.
 
-### The Problem
+**Why AUC matters:**
 
-In binary classification, **Area Under the ROC Curve (AUC)** is often the metric that matters especially in imbalanced settings like medical diagnosis, fraud detection, and information retrieval. However, most deep learning frameworks optimize cross-entropy loss (empirical loss functions), which doesn't directly correspond to AUC performance.
+In imbalanced classification, accuracy is misleading. A cancer screening model that labels everyone "healthy" achieves 99% accuracy if only 1% of patients have cancer—but it's useless. What matters is **ranking**: can the model reliably score true positives higher than false positives?
 
-**Why standard methods struggle with AUC:**
-- AUC measures ranking quality: all positive samples should score higher than negative samples
-- This requires evaluating **pairwise comparisons** between classes, not individual predictions
-- The true AUC objective uses non-differentiable indicator functions: $\mathbb{1}(\text{score}_{\text{pos}} > \text{score}_{\text{neg}})$
-- Naively computing all pairs leads to $O(n^2)$ complexity
+AUC (Area Under the ROC Curve) directly measures this ranking quality. It's the probability that a randomly chosen positive example scores higher than a randomly chosen negative example. This is exactly what we want in:
 
-### Our Approach
+- **Medical diagnosis**: Rank high-risk patients above low-risk ones, regardless of threshold
+- **Fraud detection**: Flag suspicious transactions at the top of the review queue
+- **Credit scoring**: Order loan applicants by default risk for manual review
+- **Information retrieval**: Return relevant documents before irrelevant ones
 
-This project develops **proximal optimization methods** specifically designed for direct AUC maximization. We introduce:
+**The optimization challenge:**
 
-1. **Piecewise linear surrogate loss** that approximates the indicator function while remaining tractable
-2. **Closed-form proximal operators** with γ-dependent solutions that exploit problem structure for computation efficiency
-3. **Augmented Lagrangian Method (ALM)** + **Semi-Smooth Newton (SSN)** framework for efficient solving
-4. **Controlled pairwise sampling** that reduces complexity from $O(n^2)$ to $O(n \cdot k)$ where k is a subset of pairs per sample used
+True AUC requires comparing all positive-negative pairs:
+$$\text{AUC} = \frac{1}{n_+ n_-} \sum_{i: y_i=1} \sum_{j: y_j=0} \mathbb{1}(f(x_i) > f(x_j))$$
 
-**Key innovation**: Our methodology and analysis reveals that proximal operator parameters are proportional to the Augmented Lagrangian parameters ($\sigma = 1 / \gamma$). 
+This has two problems:
+1. $O(n^2)$ pairwise comparisons (computationally expensive)
+2. Non-differentiable indicator function $\mathbb{1}(\cdot)$ (can't use gradient descent)
 
-### Connection to Contrastive Learning
+## Our Approach
 
-**Binary Contrastive Learning** (current implementation):
-- Pull similar samples (same class) together, push dissimilar samples (different classes) apart
-- When embeddings are 1-dimensional, this reduces to AUC optimization
-- **Validated** on CIFAR-10 binary classification
+We develop proximal optimization methods that:
+1. Replace the indicator function with a Fisher-consistent piecewise linear surrogate
+2. Derive explicit proximal operators with $\gamma$-dependent formulas
+3. Use Augmented Lagrangian Method (ALM) + Semi-Smooth Newton (SSN) for efficient solving
+4. Reduce complexity from $O(n^2)$ to $O(n \cdot k)$ through controlled sampling
 
-**Multi-Class Extension** (theoretical framework):
-- **One-vs-Rest**: Apply binary AUC optimization for each class vs. all others
-- **Pairwise Decomposition**: Compare all class pairs $(C_i, C_j)$ separately
-- **Supervised Contrastive Loss**: Same pairwise structure—positive pairs (same class) vs. negative pairs (different classes)
+**Scope**: Linear models $f(x) = w^\top x$, which are interpretable, theoretically tractable, and widely deployed in medical/financial applications. Framework extends naturally to kernel methods.
 
-Our formulation **naturally handles multi-class** settings since:
-1. The pairwise difference $w^\top(z_j - z_i)$ works for any pair of classes
-2. The proximal operators don't depend on number of classes
-3. The ALM framework scales to multiple comparison sets $S_i$
+**Key finding**: $\sigma = 1.0$ provides robust performance across different problem geometries.
 
----
-
-## Key Results
+## Results
 
 ### CIFAR-10 Binary Classification
 
-**Setup**: Binary classification on CIFAR-10 (2 classes), comparing Prox-SGD against standard baselines.
-
-| Dataset | Configuration | Prox AUC | LibAUC Baseline | Gap |
-|---------|--------------|----------|-----------------|-----|
-| Balanced | σ=1.0, 25 pairs, 10 batches | **95.27%** | 97.56% | -2.29% |
-| Imbalanced (1:9) | σ=1.0, 25 pairs, 10 batches | **97.75%** | 98.08% | -0.33% |
-
-**Observations**:
-- Method performs competitively on imbalanced data (within 0.33% of state-of-the-art)
-- Controlled sampling (50 pos + 50 neg pairs per batch) enables efficient computation
-- Room for improvement through hyperparameter tuning and sampling strategies
+| Dataset | Config | Prox AUC | LibAUC | Gap |
+|---------|--------|----------|--------|-----|
+| Balanced | σ=1.0, 25 pairs/batch | **95.27%** | 97.56% | -2.29% |
+| Imbalanced (1:9) | σ=1.0, 25 pairs/batch | **97.75%** | 98.08% | -0.33% |
 
 ### Synthetic SVM Experiments
 
-**Setup**: Controlled geometric configurations to isolate algorithm behavior.
+| Scenario | Dimensions | Prox | BCE | LibAUC |
+|----------|-----------|------|-----|--------|
+| Low sep, many samples | 1000×50 | **99.12%** | 99.88% | 99.30% |
+| High sep, few samples | 50×500 | **100%** | 100% | 0%* |
+| High sep, many samples | 1000×50 | **99.94%** | 100% | 100% |
 
-| Scenario | Dimensions (m×n) | Prox AUC | BCE AUC | LibAUC AUC |
-|----------|-----------------|----------|---------|------------|
-| Low separation, many samples | 1000×50 | **99.12%** | 99.88% | 99.30% |
-| High separation, few samples | 50×500 | **100%** | 100% | 0%* |
-| High separation, many samples | 1000×50 | **99.94%** | 100% | 100% |
-
----
+*LibAUC fails completely in high-dimensional, low-sample regimes where our method achieves perfect AUC.
 
 ## Quick Start
-
-### Installation
 
 ```bash
 git clone https://github.com/nataliarodriguez-uc/auc-opt.git
@@ -84,140 +65,63 @@ cd auc-opt
 pip install -r requirements.txt
 ```
 
-### Run Demo
+See `demos/` for working examples.
 
-tbd 
+## Repository Structure
 
-### Basic Usage
-
-tbd
-
----
+```
+auc-opt/
+├── demos/          # Jupyter notebooks and examples
+├── docs/           # Technical documentation
+├── src/
+│   ├── julia/      # Julia implementation
+│   └── python/     # Python implementation
+│       └── aucopt/ # Main package
+└── requirements.txt
+```
 
 ## Documentation
 
-**Methodology Details** 
-- **[Overview](docs/1_overview.md)** - Problem motivation and the X-risk framework
-- **[Algorithm](docs/2_algorithm.md)** - From pairwise objectives to AUC formulation
-
-**Implementation details:**
-- **[Optimization Methods](docs/3_optimization.md)** - Proximal operators, ALM, and SSN solver details
-- **[Experiments](docs/4_experiments.md)** - Full experimental setup, results, and analysis
-- **[Math Appendix](docs/5_math_appendix.md)** - Complete derivations and proofs
-
----
-
-## Optimization Highlights
-
-### Proximal Optimization Framework
-
-**Surrogate Loss Construction**:
-- Replace non-differentiable indicator $\mathbb{1}(t > 0)$ with piecewise linear $\ell_\delta(t) = \min(1, \max(0, t - \delta))$
-- Retains theoretical properties (Fisher consistency) while enabling efficient computation
-
-**γ-Dependent Proximal Operators**:
-- Closed-form solutions for proximal mapping: $\text{prox}_{\gamma \ell_\delta}(x)$
-- Three regimes based on $\gamma = 1/\sigma$:
-  - $\gamma < 2$: Sharp transitions, stable convergence
-  - $\gamma = 2$: Subdifferential at boundary
-  - $\gamma > 2$: Wider non-differentiable region
-
-**Augmented Lagrangian Decomposition**:
-- Introduce auxiliary variables $y_{ij} = w^\top(z_j - z_i)$ for each pair
-- ALM framework: alternate between primal (SSN) and dual (Lagrange multiplier) updates
-- Exploits sparsity: only update pairs in active regions (not correctly classified)
-
-### Computational Efficiency
-
-Rather than evaluating all $O(n^2)$ pairs:
-1. **Controlled sampling**: Fix batch size (e.g., 25 pos × 25 neg = 625 pairs)
-2. **Sparse structure**: Many pairs are correctly classified → zero gradient → skip updates
-3. **Block updates**: Only recompute active pairs each iteration
-
-**Result**: Effective complexity $O(n \cdot k)$ where $k \ll n$.
-
-See [docs/3_optimization.md](docs/3_optimization.md) for complete mathematical details.
-
----
+- [Overview](docs/1_overview.md) - Problem motivation
+- [Algorithm](docs/2_algorithm.md) - Mathematical formulation  
+- [Optimization](docs/3_optimization.md) - Proximal operators and ALM details
+- [Experiments](docs/4_experiments.md) - Full results and analysis
+- [Math Appendix](docs/5_math_appendix.md) - Derivations and proofs
 
 ## Applications
 
-This methodology applies to:
+Works for any pairwise ranking objective:
+- Medical diagnosis (imbalanced datasets)
+- Fraud detection (rare positives)
+- Credit scoring (interpretable models required)
+- Average Precision, Precision@K
+- Binary contrastive learning
 
-**AUC-Based Classification** (current validation):
-- Medical diagnosis: Binary or multi-class with imbalanced classes
-- Fraud detection: Rare positive class vs. normal transactions  
-- Information retrieval: Binary or graded relevance judgments
-- Any classification problem where AUC is the target metric
+Not yet addressed: deep neural networks, large-scale pretraining, PyTorch/TensorFlow integration.
 
-**Contrastive Learning** (framework supports, validation in progress):
-- Binary contrastive learning: Validated on CIFAR-10
-- Multi-class contrastive learning: Pairwise formulation naturally extends
-- Supervised contrastive loss: Same pairwise comparison structure
+## Status
 
-**Ranking Objectives**:
-- Learning to rank with pairwise preferences
-- Precision@K optimization
-- Multi-class AUC via one-vs-rest or pairwise decomposition
+**Done**: Core algorithm, synthetic validation, CIFAR-10 experiments, documentation
 
-**TBD...**:
-- Large-scale self-supervised pretraining (SimCLR, MoCo scale)
-- High-dimensional embeddings beyond linear projections
-- Production deployment as PyTorch/TensorFlow loss function
+**In progress**: Multi-class AUC, advanced sampling strategies, hyperparameter analysis
 
----
-
-## Current Status
-
-**Completed:**
-- Proximal operator derivation and implementation (γ-dependent cases)
-- ALM + SSN optimization framework
-- Synthetic SVM validation experiments
-- CIFAR-10 binary classification experiments
-- Comprehensive technical documentation
-
-**In Progress:**
-- Advanced sampling strategies (hard negative mining, curriculum sampling)
-- Hyperparameter sensitivity analysis
-- Extension to larger-scale experiments
-
-**Future Directions:**
-- Multi-class AUC via one-vs-rest
-- Integration with PyTorch as a custom loss function
-- Application to medical imaging datasets
-- Self-supervised contrastive learning formulation
-
----
+**Future**: Kernel extensions, deep network integration, production deployment
 
 ## Citation
 
 ```bibtex
-@software{rodriguez2026aucopt,
+@misc{rodriguez2026aucopt,
   author = {Rodriguez Figueroa, Natalia A.},
-  title = {Proximal Methods for AUC Optimization},
+  title = {Pairwise Proximal Methods for Direct AUC Optimization},
   year = {2026},
-  url = {https://github.com/nataliarodriguez-uc/auc-opt}
+  howpublished = {\url{https://github.com/nataliarodriguez-uc/auc-opt}},
+  note = {Python package for direct AUC optimization}
 }
 ```
 
----
-
-## References
-
-**Theoretical Foundations:**
-- Yang, T. (2023). *Algorithmic foundations of empirical X-risk minimization*
-- Khanh, P. D., Mordukhovich, B. S., & Phat, V. T. (2022). *A generalized Newton method for subgradient systems*
-- Li, X., Sun, D., & Toh, K.-C. (2018). *A highly efficient semismooth Newton augmented Lagrangian method for solving LASSO problems*
-- Tian, L., & So, A. M.-C. (2022). *Computing d-stationary points of ρ-margin loss SVM*
-
----
-
-## Authors
+## Author
 
 **Natalia A. Rodriguez Figueroa**  
-Industrial Engineering & Operations Research  
-University of California, Berkeley  
-Advisor: Dr. Ying Cui
-
-📧 Email: natalia_rodriguezuc@berkeley.edu  
-🔗 [GitHub Profile](https://github.com/nataliarodriguez-uc)
+PhD Student, IEOR, UC Berkeley  
+Advisor: Dr. Ying Cui  
+📧 natalia_rodriguezuc@berkeley.edu
