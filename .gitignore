@@ -6,6 +6,6 @@ __pycache__/
 .ipynb_checkpoints/
 .DS_Store
 svm_example_old
-#experiments/
+experiments/
 old_codes/
 bib/
