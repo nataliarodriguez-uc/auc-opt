@@ -21,6 +21,7 @@ class BatchSampler:
         Returns:
             List of arrays, each containing sample indices for one batch
         """
+        
         if seed is not None:
             np.random.seed(seed)
         
@@ -42,8 +43,7 @@ class BatchSampler:
         pos_batches = np.array_split(pos_idx[:samples_needed_pos], total_batches)
         neg_batches = np.array_split(neg_idx[:samples_needed_neg], total_batches)
         
-        batch_indices = [np.concatenate([pos, neg]) 
-                        for pos, neg in zip(pos_batches, neg_batches)]
+        batch_indices = [np.concatenate([pos, neg]) for pos, neg in zip(pos_batches, neg_batches)]
         
         return batch_indices
     

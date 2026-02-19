@@ -23,24 +23,26 @@ import time
 import numpy as np
 import pandas as pd
 from copy import deepcopy
+from sklearn.model_selection import train_test_split
 
 # ── project imports (adjust sys.path if needed) ───────────────────────────────
 sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), "../../")))
 
-from aucopt.data.exp_svmdata import DataSet_SVM
+from aucopt.data.problem_svmdata import DataSet_SVM
 from aucopt.data.problem_instance import ProblemInstance
 from aucopt.optim.alm import run_alm
 from aucopt.optim.variables import ALMParameters, SSNParameters, LineSearchParameters
+from aucopt.eval.baselines import evaluate_pytorch_bce, evaluate_libauc
 from sklearn.metrics import roc_auc_score
 
-from experiment_config import (
+from exp_config import (
     SEEDS, SIGMA_GRID, SIGMA_FOCAL,
     ALM_DEFAULTS, SSN_DEFAULTS, LS_DEFAULTS,
     TAU0, ALPHA0, TRAIN_RATIO,
     DATASET_SPECS, DATASET_KEYS,
     N_INIT_TRIALS, SIGMA_FOR_INIT_EXPERIMENT,
     CONVERGENCE_EXPERIMENTS,
-    RESULTS_DIR, FIGURES_DIR,
+    RESULTS_DIR, FIGURES_DIR,CONVERGENCE_DIR
 )
 
 
@@ -55,16 +57,7 @@ def make_params():
     LS = LineSearchParameters(**LS_DEFAULTS)
     return AP, SP, LS
 
-
 def build_dataset(spec, seed):
-    """
-    Build a DataSet_SVM and a ProblemInstance (train/test split).
-
-    Returns
-    -------
-    ds   : DataSet_SVM (full data; used for label / feature access)
-    PI   : ProblemInstance in train_test mode
-    """
     ds = DataSet_SVM(
         m            = spec["m"],
         n            = spec["n"],
@@ -73,7 +66,21 @@ def build_dataset(spec, seed):
         sep_distance = spec["sep_distance"],
         seed         = seed,
     )
-    PI = ProblemInstance(ds.X, ds.y, train_ratio=TRAIN_RATIO, seed=seed)
+
+    X_train, X_test, y_train, y_test = train_test_split(
+        ds.X.T, ds.y,                    # sklearn expects (n_samples, n_features)
+        train_size = TRAIN_RATIO,
+        stratify   = ds.y,
+        random_state = seed,
+    )
+    X_train, X_test = X_train.T, X_test.T   # back to (d, n) convention
+
+    PI = ProblemInstance(X_train, y_train, seed=seed)
+
+    # Attach test set manually so evaluate_auc() can find it
+    PI.X_test = X_test
+    PI.y_test = y_test
+
     return ds, PI
 
 
@@ -233,6 +240,7 @@ def run_alm_with_diagnostics(sigma, PI, seed):
 # ─────────────────────────────────────────────────────────────────────────────
 
 def run_sigma_sensitivity(dataset_keys=None, sigma_grid=None, seeds=None, verbose=True):
+    
     """
     For every (dataset, σ, seed) triple, run one ALM solve and record:
         dataset_key, sigma, gamma, seed, auc, alm_iter, alm_time, L_final
@@ -353,7 +361,7 @@ def run_convergence_diagnostics(experiments=None, verbose=True):
     results/tier1/convergence_summary.csv  (one row per experiment)
     """
     if experiments is None: experiments = CONVERGENCE_EXPERIMENTS
-    os.makedirs(RESULTS_DIR, exist_ok=True)
+    os.makedirs(CONVERGENCE_DIR, exist_ok=True)
 
     summary = []
 
@@ -379,7 +387,7 @@ def run_convergence_diagnostics(experiments=None, verbose=True):
             "ssn_iters"    : res["ssn_iter_trace"],
             "sigma_t"      : [sigma * (ALM_DEFAULTS["sigma_scale"] ** t) for t in range(T)],
         })
-        trace_path = os.path.join(RESULTS_DIR, f"convergence_{label}.csv")
+        trace_path = os.path.join(CONVERGENCE_DIR, f"convergence_{label}.csv")
         df_trace.to_csv(trace_path, index=False)
 
         summary.append(dict(
@@ -399,11 +407,53 @@ def run_convergence_diagnostics(experiments=None, verbose=True):
                   f"time={res['alm_time']:.2f}s")
 
     df_sum = pd.DataFrame(summary)
-    sum_path = os.path.join(RESULTS_DIR, "convergence_summary.csv")
+    sum_path = os.path.join(CONVERGENCE_DIR, "convergence_summary.csv")
     df_sum.to_csv(sum_path, index=False)
     print(f"\n✅ Saved convergence summary → {sum_path}\n")
     return df_sum
 
+# ─────────────────────────────────────────────────────────────────────────────
+# Sub-experiment 4: Baselines
+# ─────────────────────────────────────────────────────────────────────────────
+
+def run_baselines(verbose=True):
+    """
+    Run BCE and LibAUC once per dataset per seed (no sigma dependence).
+    Saves results/tier1/baselines.csv
+    """
+    os.makedirs(RESULTS_DIR, exist_ok=True)
+    records = []
+
+    for dk in DATASET_KEYS:
+        spec = DATASET_SPECS[dk]
+        for seed in SEEDS:
+            _, PI = build_dataset(spec, seed)
+
+            # BCE expects (n_samples, n_features) so transpose
+            X_train = PI.X.T
+            X_test  = PI.X_test.T
+
+            bce_auc, _    = evaluate_pytorch_bce(X_train, X_test, PI.y, PI.y_test)
+            libauc_result = evaluate_libauc(X_train, X_test, PI.y, PI.y_test)
+            libauc_auc    = libauc_result[0] if isinstance(libauc_result, tuple) else None
+
+            records.append(dict(
+                dataset_key   = dk,
+                dataset_label = spec["label"],
+                seed          = seed,
+                bce_auc       = bce_auc,
+                libauc_auc    = libauc_auc,
+            ))
+
+            if verbose:
+                print(f"  {dk:35s} seed={seed}  "
+                      f"BCE={bce_auc:.4f}  LibAUC={libauc_auc:.4f}")
+
+    df = pd.DataFrame(records)
+    out = os.path.join(RESULTS_DIR, "baselines.csv")
+    df.to_csv(out, index=False)
+    print(f"\n✅ Saved baselines -> {out}\n")
+    return df
 
 # ─────────────────────────────────────────────────────────────────────────────
 # CLI entry point

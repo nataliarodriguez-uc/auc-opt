@@ -49,7 +49,7 @@ matplotlib.rcParams.update({
 })
 
 sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), "../../")))
-from experiment_config import (
+from exp_config import (
     RESULTS_DIR, FIGURES_DIR, DATASET_SPECS, DATASET_KEYS,
     SIGMA_GRID, CONVERGENCE_EXPERIMENTS, ALM_DEFAULTS,
 )
@@ -81,64 +81,99 @@ GAMMA_BOUNDARIES = {
 # Figure 1 — AUC vs σ (one sub-plot per dataset, CI bands over seeds)
 # ─────────────────────────────────────────────────────────────────────────────
 
-def fig_auc_vs_sigma_grid(df=None):
+def fig_auc_vs_sigma_grid(df=None, df_baselines=None):
     if df is None:
         df = pd.read_csv(os.path.join(RESULTS_DIR, "sigma_sensitivity.csv"))
+    if df_baselines is None:
+        path = os.path.join(RESULTS_DIR, "baselines.csv")
+        if os.path.exists(path):
+            df_baselines = pd.read_csv(path)
 
-    keys    = [k for k in DATASET_KEYS if k in df.dataset_key.unique()]
-    n_plots = len(keys)
-    ncols   = 4
-    nrows   = int(np.ceil(n_plots / ncols))
+    # Paired layout — each row is a regime, columns are low/high sep
+    layout = [
+        ("PI1_lowsep_mggn",       "PI4_highsep_mggn"),
+        ("PI3_lowsep_mlln",       "PI6_highsep_mlln"),
+        ("PI7_lowsep_imbalanced", "PI8_highsep_imbalanced"),
+    ]
 
-    fig, axes = plt.subplots(nrows, ncols,
-                             figsize=(4.5 * ncols, 3.5 * nrows),
-                             sharey=False)
-    axes = np.array(axes).flatten()
+    nrows, ncols = 3, 2
+    fig, axes = plt.subplots(nrows, ncols, figsize=(10, 12))
 
-    for ax_idx, dk in enumerate(keys):
-        ax   = axes[ax_idx]
-        sub  = df[df.dataset_key == dk]
-        spec = DATASET_SPECS[dk]
+    for row_idx, (dk_left, dk_right) in enumerate(layout):
+        for col_idx, dk in enumerate([dk_left, dk_right]):
+            ax   = axes[row_idx, col_idx]
+            spec = DATASET_SPECS[dk]
+            sub  = df[df.dataset_key == dk]
 
-        stats = sub.groupby("sigma")["auc"].agg(["mean", "std", "min", "max"]).reset_index()
+            if sub.empty:
+                ax.set_visible(False)
+                continue
 
-        ax.fill_between(stats.sigma, stats["mean"] - stats["std"],
-                        stats["mean"] + stats["std"],
-                        alpha=0.20, color=PALETTE[0])
-        ax.fill_between(stats.sigma, stats["min"], stats["max"],
-                        alpha=0.10, color=PALETTE[0])
-        ax.plot(stats.sigma, stats["mean"],
-                color=PALETTE[0], marker="o", ms=5, lw=1.8, label="Prox (mean)")
-        ax.plot(stats.sigma, stats["min"],
-                color=PALETTE[0], lw=0.8, ls=":", alpha=0.7)
-        ax.plot(stats.sigma, stats["max"],
-                color=PALETTE[0], lw=0.8, ls=":", alpha=0.7)
+            stats = sub.groupby("sigma")["auc"].agg(["mean", "std"]).reset_index()
 
-        # γ=2 boundary
-        ax.axvline(0.5, color="gray", ls="--", lw=0.8, alpha=0.6, label="γ=2 (σ=0.5)")
+            # ── Prox ──────────────────────────────────────────────
+            ax.fill_between(stats.sigma,
+                            stats["mean"] - stats["std"],
+                            stats["mean"] + stats["std"],
+                            alpha=0.20, color=PALETTE[0])
+            ax.plot(stats.sigma, stats["mean"],
+                    color=PALETTE[0], marker="o", ms=5, lw=1.8,
+                    label=f"Prox ({stats['mean'].mean():.3f} ± {stats['std'].mean():.3f})")
 
-        ax.set_xscale("log")
-        ax.set_xlabel("σ  (log scale)")
-        ax.set_ylabel("Test AUC")
-        ax.set_ylim(0, 1.05)
-        ax.set_title(spec["label"], fontsize=9, pad=4)
+            # ── Baselines ──────────────────────────────────────────
+            if df_baselines is not None:
+                sub_b = df_baselines[df_baselines.dataset_key == dk]
+                if not sub_b.empty:
+                    bce_mean = sub_b["bce_auc"].mean()
+                    bce_std  = sub_b["bce_auc"].std()
+                    ax.axhline(bce_mean, color=PALETTE[1], ls="--", lw=1.5,
+                               label=f"BCE ({bce_mean:.3f} ± {bce_std:.3f})")
+                    ax.axhspan(max(0, bce_mean - bce_std),
+                               min(1, bce_mean + bce_std),
+                               alpha=0.08, color=PALETTE[1])
 
-        if ax_idx == 0:
-            ax.legend(fontsize=7, loc="lower right")
+                    libauc_mean = sub_b["libauc_auc"].mean()
+                    libauc_std  = sub_b["libauc_auc"].std()
+                    ax.axhline(libauc_mean, color=PALETTE[2], ls="--", lw=1.5,
+                               label=f"LibAUC ({libauc_mean:.3f} ± {libauc_std:.3f})")
+                    ax.axhspan(max(0, libauc_mean - libauc_std),
+                               min(1, libauc_mean + libauc_std),
+                               alpha=0.08, color=PALETTE[2])
 
-    # hide unused axes
-    for ax in axes[n_plots:]:
-        ax.set_visible(False)
+            # ── γ=2 boundary ───────────────────────────────────────
+            ax.axvline(0.5, color="gray", ls=":", lw=0.8, label="γ=2 (σ=0.5)")
 
-    fig.suptitle("AUC vs Penalty Parameter σ  (mean ± std / min-max over seeds)",
-                 fontsize=12, y=1.01)
+            # ── x-axis: log scale, literal labels ─────────────────
+            sigma_vals = sorted(sub["sigma"].unique())
+            ax.set_xscale("log")
+            ax.set_xticks(sigma_vals)
+            ax.set_xticklabels([str(s) for s in sigma_vals], rotation=45, ha="right")
+            ax.xaxis.set_minor_locator(ticker.NullLocator())
+
+            ax.set_xlabel("σ")
+            ax.set_ylabel("Test AUC")
+            ax.set_ylim(0, 1.05)
+            ax.set_title(spec["label"], fontsize=9, pad=6)
+            ax.legend(fontsize=7, loc="lower right",
+                      framealpha=0.9, edgecolor="lightgray")
+
+    # Column headers to make the layout readable at a glance
+    axes[0, 0].set_title("Low Separation\n" + DATASET_SPECS["PI1_lowsep_mggn"]["label"],
+                          fontsize=9, pad=6)
+    axes[0, 1].set_title("High Separation\n" + DATASET_SPECS["PI4_highsep_mggn"]["label"],
+                          fontsize=9, pad=6)
+
+    fig.suptitle(
+        "Effect of Penalty Parameter σ on Test AUC across Dataset Regimes\n"
+        "Shaded bands = ±1 std over seeds  |  Dashed lines = baseline means",
+        fontsize=12, y=1.01
+    )
     fig.tight_layout()
 
     out = os.path.join(FIGURES_DIR, "auc_vs_sigma_grid.pdf")
-    fig.savefig(out)
-    print(f"  Saved → {out}")
+    fig.savefig(out, bbox_inches="tight")
+    print(f"  Saved -> {out}")
     plt.close(fig)
-
 
 # ─────────────────────────────────────────────────────────────────────────────
 # Figure 2 — AUC Heat-map  (datasets × σ values)
@@ -260,50 +295,109 @@ def fig_timing_vs_sigma(df=None):
 # Figure 4 — Initialization Robustness Box plots
 # ─────────────────────────────────────────────────────────────────────────────
 
-def fig_init_robustness(df=None):
+def fig_init_robustness(df=None, df_baselines=None):
     if df is None:
         df = pd.read_csv(os.path.join(RESULTS_DIR, "init_robustness.csv"))
+    if df_baselines is None:
+        path = os.path.join(RESULTS_DIR, "baselines.csv")
+        if os.path.exists(path):
+            df_baselines = pd.read_csv(path)
 
-    keys   = [k for k in DATASET_KEYS if k in df.dataset_key.unique()]
-    labels = [DATASET_SPECS[k]["label"] for k in keys]
+    # Same 3x2 paired layout as sensitivity plot
+    layout = [
+        ("PI1_lowsep_mggn",       "PI4_highsep_mggn"),
+        ("PI3_lowsep_mlln",       "PI6_highsep_mlln"),
+        ("PI7_lowsep_imbalanced", "PI8_highsep_imbalanced"),
+    ]
 
-    data_per_dataset = [df[df.dataset_key == k]["auc"].values for k in keys]
+    nrows, ncols = 3, 2
+    fig, axes = plt.subplots(nrows, ncols, figsize=(10, 12))
 
-    fig, ax = plt.subplots(figsize=(max(8, len(keys) * 1.3), 4.5))
+    for row_idx, (dk_left, dk_right) in enumerate(layout):
+        for col_idx, dk in enumerate([dk_left, dk_right]):
+            ax   = axes[row_idx, col_idx]
+            spec = DATASET_SPECS[dk]
+            sub  = df[df.dataset_key == dk]
 
-    bp = ax.boxplot(data_per_dataset,
-                    labels=labels,
-                    patch_artist=True,
-                    medianprops=dict(color="black", lw=2),
-                    whiskerprops=dict(lw=1.2),
-                    capprops=dict(lw=1.2),
-                    flierprops=dict(marker=".", alpha=0.5, ms=5))
+            if sub.empty:
+                ax.set_visible(False)
+                continue
 
-    for i, (patch, key) in enumerate(zip(bp["boxes"], keys)):
-        color = PALETTE[i % len(PALETTE)]
-        patch.set_facecolor(color)
-        patch.set_alpha(0.6)
+            # ── Box plot data ──────────────────────────────────────
+            auc_vals = sub["auc"].values
+            bp = ax.boxplot(auc_vals,
+                           patch_artist=True,
+                           medianprops=dict(color="black", lw=2),
+                           whiskerprops=dict(lw=1.2),
+                           capprops=dict(lw=1.2),
+                           flierprops=dict(marker=".", alpha=0.5, ms=5),
+                           widths=0.4)
 
-    # Overlay individual points
-    for i, vals in enumerate(data_per_dataset):
-        jitter = np.random.normal(i + 1, 0.06, size=len(vals))
-        ax.scatter(jitter, vals, alpha=0.4, s=18,
-                   color=PALETTE[i % len(PALETTE)], zorder=3)
+            bp["boxes"][0].set_facecolor(PALETTE[0])
+            bp["boxes"][0].set_alpha(0.6)
 
-    ax.set_ylabel("Test AUC")
-    ax.set_title(
-        f"Initialization Robustness  (σ = {df.sigma.iloc[0]:.2f},  "
-        f"n_trials = {df.trial.max() + 1}  random w₀)",
-        fontsize=10)
-    ax.set_xticklabels(labels, rotation=30, ha="right", fontsize=8)
-    ax.set_ylim(0, 1.05)
-    ax.axhline(0.5, color="gray", ls=":", lw=0.8, label="random baseline")
-    ax.legend(fontsize=8)
+            # ── Jittered individual points ─────────────────────────
+            jitter = np.random.normal(1, 0.04, size=len(auc_vals))
+            ax.scatter(jitter, auc_vals, alpha=0.4, s=18,
+                      color=PALETTE[0], zorder=3)
 
+            # ── Baseline reference lines ───────────────────────────
+            if df_baselines is not None:
+                sub_b = df_baselines[df_baselines.dataset_key == dk]
+                if not sub_b.empty:
+                    bce_mean    = sub_b["bce_auc"].mean()
+                    bce_std     = sub_b["bce_auc"].std()
+                    libauc_mean = sub_b["libauc_auc"].mean()
+                    libauc_std  = sub_b["libauc_auc"].std()
+
+                    ax.axhline(bce_mean, color=PALETTE[1], ls="--", lw=1.5,
+                               label=f"BCE ({bce_mean:.3f} ± {bce_std:.3f})")
+                    ax.axhspan(max(0, bce_mean - bce_std),
+                               min(1, bce_mean + bce_std),
+                               alpha=0.08, color=PALETTE[1])
+
+                    ax.axhline(libauc_mean, color=PALETTE[2], ls="--", lw=1.5,
+                               label=f"LibAUC ({libauc_mean:.3f} ± {libauc_std:.3f})")
+                    ax.axhspan(max(0, libauc_mean - libauc_std),
+                               min(1, libauc_mean + libauc_std),
+                               alpha=0.08, color=PALETTE[2])
+
+            # ── Random baseline ────────────────────────────────────
+            ax.axhline(0.5, color="gray", ls=":", lw=0.8,
+                      label="random (AUC=0.5)")
+
+            # ── Annotations ────────────────────────────────────────
+            mean_auc = auc_vals.mean()
+            std_auc  = auc_vals.std()
+            ax.text(1.3, mean_auc,
+                   f"mean={mean_auc:.3f}\nstd={std_auc:.3f}",
+                   fontsize=7, va="center", color=PALETTE[0])
+
+            # ── Formatting ─────────────────────────────────────────
+            imbalance = spec.get("imbalance", "50/50")
+            ax.set_title(
+                f"{spec['label']}\n"
+                f"m={spec['m']}, n={spec['n']}, ratio={imbalance}",
+                fontsize=8, pad=6
+            )
+            ax.set_xticks([])
+            ax.set_ylabel("Test AUC")
+            ax.set_ylim(0, 1.05)
+            ax.legend(fontsize=7, loc="lower right",
+                     framealpha=0.9, edgecolor="lightgray")
+
+    sigma_val = df["sigma"].iloc[0]
+    n_trials  = df["trial"].max() + 1
+    fig.suptitle(
+        f"Initialization Robustness: AUC Distribution over {n_trials} Random w₀\n"
+        f"Fixed σ={sigma_val}, fixed dataset per type  |  Box = IQR, line = median",
+        fontsize=11, y=1.01
+    )
     fig.tight_layout()
+
     out = os.path.join(FIGURES_DIR, "init_robustness_box.pdf")
-    fig.savefig(out)
-    print(f"  Saved → {out}")
+    fig.savefig(out, bbox_inches="tight")
+    print(f"  Saved -> {out}")
     plt.close(fig)
 
 
@@ -414,7 +508,7 @@ def fig_summary_table(df=None, sigma_focal=None):
     if df is None:
         df = pd.read_csv(os.path.join(RESULTS_DIR, "sigma_sensitivity.csv"))
     if sigma_focal is None:
-        from experiment_config import SIGMA_FOCAL
+        from exp_config import SIGMA_FOCAL
         sigma_focal = SIGMA_FOCAL
 
     sub = df[df.sigma.isin(sigma_focal)]
@@ -469,7 +563,7 @@ def fig_summary_table(df=None, sigma_focal=None):
 
 FIG_MAP = {
     "1": ("AUC vs σ grid",             fig_auc_vs_sigma_grid),
-    "2": ("AUC heatmap",               fig_auc_heatmap),
+    #"2": ("AUC heatmap",               fig_auc_heatmap),
     "3": ("Timing vs σ",               fig_timing_vs_sigma),
     "4": ("Init robustness box",       fig_init_robustness),
     "5": ("Convergence residuals",     fig_convergence_residuals),
