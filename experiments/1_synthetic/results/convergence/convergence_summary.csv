@@ -1,4 +1,0 @@
-label,dataset_key,sigma,seed,auc,alm_iter,alm_time,converged,trace_file
-PI3 scale=2.0 (current),PI3_lowsep_mlln,0.1,1034,0.7678571428571428,13,0.2814021110534668,1,results/convergence/convergence_PI3_scale2.0_(current).csv
-PI3 scale=1.5,PI3_lowsep_mlln,0.1,1034,0.7678571428571428,13,0.240401029586792,1,results/convergence/convergence_PI3_scale1.5.csv
-PI3 scale=1.2,PI3_lowsep_mlln,0.1,1034,0.7678571428571428,13,0.24101495742797852,1,results/convergence/convergence_PI3_scale1.2.csv

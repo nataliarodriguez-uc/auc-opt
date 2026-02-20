@@ -137,7 +137,7 @@ def run_single(sigma, PI, seed):
 # Patched ALM that records residuals per outer iteration
 # ─────────────────────────────────────────────────────────────────────────────
 
-def run_alm_with_diagnostics(sigma, PI, seed):
+def run_alm_with_diagnostics(sigma, PI, seed, sigma_scale = 2.0):
     """
     Wraps run_alm but additionally captures the constraint-residual
     and objective value at every outer ALM iteration.
@@ -166,6 +166,7 @@ def run_alm_with_diagnostics(sigma, PI, seed):
 
     K_len     = PI.n_pairs
     inv_K_len = 1.0 / K_len
+    AP_local.sigma_scale = sigma_scale
 
     almlog = ALMLog(AP_local.max_iter_alm, SP_local.max_iter_ssn, LS_local.max_iter_ls)
     almlog.alm_time = time.time()
@@ -369,6 +370,7 @@ def run_convergence_diagnostics(experiments=None, verbose=True):
         dk    = exp["dataset_key"]
         sigma = exp["sigma"]
         seed  = exp["seed"]
+        sigma_scale = exp.get("sigma_scale", 2.0)
         label = exp["label"].replace(" ", "_").replace(",", "").replace("=", "")
 
         spec  = DATASET_SPECS[dk]
@@ -377,7 +379,7 @@ def run_convergence_diagnostics(experiments=None, verbose=True):
         if verbose:
             print(f"  Convergence diag: {exp['label']} ...")
 
-        res = run_alm_with_diagnostics(sigma, PI, seed)
+        res = run_alm_with_diagnostics(sigma, PI, seed, sigma_scale = sigma_scale)
 
         T = len(res["residual_trace"])
         df_trace = pd.DataFrame({
@@ -394,6 +396,7 @@ def run_convergence_diagnostics(experiments=None, verbose=True):
             label       = exp["label"],
             dataset_key = dk,
             sigma       = sigma,
+            sigma_scale = sigma_scale,
             seed        = seed,
             auc         = res["auc"],
             alm_iter    = res["alm_iter"],

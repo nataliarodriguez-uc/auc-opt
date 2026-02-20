@@ -41,7 +41,7 @@ SSN_DEFAULTS = dict(
 
 LS_DEFAULTS = dict(
     c            = 1e-4,
-    max_iter_ls  = 20,
+    max_iter_ls  = 20,   
     beta         = 0.5,
 )
 
@@ -186,31 +186,24 @@ SIGMA_FOR_INIT_EXPERIMENT = 1.0   # fix σ, vary w0
 # Convergence-diagnostic experiment
 # (one representative seed + dataset per regime)
 # ─────────────────────────────────────────────
-CONVERGENCE_EXPERIMENTS = [
-    # Low sep m<<n — most interesting, highest variance
-    dict(dataset_key="PI3_lowsep_mlln", sigma=SIGMA_FOR_INIT_EXPERIMENT,  seed=SEEDS[0], label="PI3 low-sep m<<n, sigma=0.1"),
-    dict(dataset_key="PI3_lowsep_mlln", sigma=1.0,  seed=SEEDS[0], label="PI3 low-sep m<<n, sigma=1.0"),
-    
-    # Low sep m>>n — Prox beats baselines
-    dict(dataset_key="PI1_lowsep_mggn", sigma=1.0,  seed=SEEDS[0], label="PI1 low-sep m>>n, sigma=1.0"),
-    
-    # High sep m<<n — Prox hits 1.0, LibAUC struggles
-    dict(dataset_key="PI6_highsep_mlln", sigma=1.0, seed=SEEDS[0], label="PI6 high-sep m<<n, sigma=1.0"),
-]
+
+SIGMA_SCALE_GRID = [1.2, 1.5, 2.0]  # add this
 
 CONVERGENCE_EXPERIMENTS = [
-    # Same dataset, same seed, same sigma0 — only scale changes
-    dict(dataset_key="PI3_lowsep_mlln", sigma=0.1, 
-         sigma_scale=2.0, seed=SEEDS[0], label="PI3 scale=2.0 (current)"),
-    dict(dataset_key="PI3_lowsep_mlln", sigma=0.1, 
-         sigma_scale=1.5, seed=SEEDS[0], label="PI3 scale=1.5"),
-    dict(dataset_key="PI3_lowsep_mlln", sigma=0.1, 
-         sigma_scale=1.2, seed=SEEDS[0], label="PI3 scale=1.2"),
+    # PI3 — sigma_scale comparison
+    dict(dataset_key="PI3_lowsep_mlln",  sigma=0.1, sigma_scale=2.0, seed=SEEDS[0], label="PI3 scale=2-0"),
+    dict(dataset_key="PI3_lowsep_mlln",  sigma=0.1, sigma_scale=1.5, seed=SEEDS[0], label="PI3 scale=1-5"),
+    dict(dataset_key="PI3_lowsep_mlln",  sigma=0.1, sigma_scale=1.2, seed=SEEDS[0], label="PI3 scale=1-2"),
+
+    # Other interesting cases at default scale
+    dict(dataset_key="PI1_lowsep_mggn",       sigma=1.0, sigma_scale=2.0, seed=SEEDS[0], label="PI1 scale=2-0"),
+    dict(dataset_key="PI6_highsep_mlln",      sigma=1.0, sigma_scale=2.0, seed=SEEDS[0], label="PI6 scale=2-0"),
+    dict(dataset_key="PI7_lowsep_imbalanced", sigma=1.0, sigma_scale=2.0, seed=SEEDS[0], label="PI7 scale=2-0"),
 ]
 
 # ─────────────────────────────────────────────
 # Output paths
 # ─────────────────────────────────────────────
-RESULTS_DIR  = "results"
-FIGURES_DIR  = "figures"
-CONVERGENCE_DIR = "results/convergence"
+RESULTS_DIR  = "exp_results"
+FIGURES_DIR  = "exp_figures"
+CONVERGENCE_DIR = "exp_results/convergence"

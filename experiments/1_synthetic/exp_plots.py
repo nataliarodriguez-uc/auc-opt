@@ -6,13 +6,13 @@ publication-quality figures saved to FIGURES_DIR.
 
 Figures produced
 ----------------
-1.  auc_vs_sigma_grid.pdf        — AUC vs σ with CI bands, one panel per dataset
-2.  auc_vs_sigma_heatmap.pdf     — Heat-map: rows=datasets, cols=σ, color=mean AUC
-3.  timing_vs_sigma.pdf          — Wall-time + ALM-iters vs σ
-4.  init_robustness_box.pdf      — Box plots of AUC distribution over w0 initializations
-5.  convergence_residuals.pdf    — Constraint residual vs outer iteration
-6.  convergence_ssn_iters.pdf    — SSN inner iterations vs outer iteration
-7.  summary_table.pdf            — LaTeX-style table for paper (via matplotlib)
+1.  auc_vs_sigma_grid.png        — AUC vs σ with CI bands, one panel per dataset
+2.  auc_vs_sigma_heatmap.png     — Heat-map: rows=datasets, cols=σ, color=mean AUC
+3.  timing_vs_sigma.png          — Wall-time + ALM-iters vs σ
+4.  init_robustness_box.png      — Box plots of AUC distribution over w0 initializations
+5.  convergence_residuals.png    — Constraint residual vs outer iteration
+6.  convergence_ssn_iters.png    — SSN inner iterations vs outer iteration
+7.  summary_table.png            — LaTeX-style table for paper (via matplotlib)
 
 Usage
 -----
@@ -51,7 +51,7 @@ matplotlib.rcParams.update({
 sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), "../../")))
 from exp_config import (
     RESULTS_DIR, FIGURES_DIR, DATASET_SPECS, DATASET_KEYS,
-    SIGMA_GRID, CONVERGENCE_EXPERIMENTS, ALM_DEFAULTS,
+    SIGMA_GRID, CONVERGENCE_EXPERIMENTS, ALM_DEFAULTS, CONVERGENCE_DIR
 )
 
 os.makedirs(FIGURES_DIR, exist_ok=True)
@@ -170,63 +170,10 @@ def fig_auc_vs_sigma_grid(df=None, df_baselines=None):
     )
     fig.tight_layout()
 
-    out = os.path.join(FIGURES_DIR, "auc_vs_sigma_grid.pdf")
+    out = os.path.join(FIGURES_DIR, "auc_vs_sigma_grid.png")
     fig.savefig(out, bbox_inches="tight")
     print(f"  Saved -> {out}")
     plt.close(fig)
-
-# ─────────────────────────────────────────────────────────────────────────────
-# Figure 2 — AUC Heat-map  (datasets × σ values)
-# ─────────────────────────────────────────────────────────────────────────────
-
-def fig_auc_heatmap(df=None):
-    if df is None:
-        df = pd.read_csv(os.path.join(RESULTS_DIR, "sigma_sensitivity.csv"))
-
-    pivot = (df.groupby(["dataset_key", "sigma"])["auc"]
-               .mean()
-               .unstack("sigma"))
-
-    # Row order: match DATASET_KEYS
-    row_order = [k for k in DATASET_KEYS if k in pivot.index]
-    pivot     = pivot.loc[row_order]
-    labels    = [DATASET_SPECS[k]["label"] for k in row_order]
-
-    fig, ax = plt.subplots(figsize=(len(pivot.columns) * 0.9 + 2.5,
-                                    len(pivot.index) * 0.55 + 1.5))
-    im = ax.imshow(pivot.values, aspect="auto", cmap="RdYlGn",
-                   vmin=0.5, vmax=1.0)
-
-    ax.set_xticks(range(len(pivot.columns)))
-    ax.set_xticklabels([f"{s:.2g}" for s in pivot.columns], rotation=45, ha="right")
-    ax.set_yticks(range(len(labels)))
-    ax.set_yticklabels(labels)
-    ax.set_xlabel("σ")
-    ax.set_title("Mean Test AUC across seeds", pad=8)
-
-    # annotate cells
-    for i in range(pivot.shape[0]):
-        for j in range(pivot.shape[1]):
-            val = pivot.values[i, j]
-            if not np.isnan(val):
-                ax.text(j, i, f"{val:.2f}", ha="center", va="center",
-                        fontsize=7, color="black" if val > 0.65 else "white")
-
-    plt.colorbar(im, ax=ax, label="AUC", shrink=0.8)
-
-    # mark γ=2 boundary column
-    sigma_cols = list(pivot.columns)
-    if 0.5 in sigma_cols:
-        col_idx = sigma_cols.index(0.5)
-        ax.axvline(col_idx - 0.5, color="royalblue", lw=2, ls="--", label="γ=2 (σ=0.5)")
-        ax.axvline(col_idx + 0.5, color="royalblue", lw=2, ls="--")
-
-    fig.tight_layout()
-    out = os.path.join(FIGURES_DIR, "auc_vs_sigma_heatmap.pdf")
-    fig.savefig(out)
-    print(f"  Saved → {out}")
-    plt.close(fig)
-
 
 # ─────────────────────────────────────────────────────────────────────────────
 # Figure 3 — Timing and ALM iteration count vs σ
@@ -236,58 +183,94 @@ def fig_timing_vs_sigma(df=None):
     if df is None:
         df = pd.read_csv(os.path.join(RESULTS_DIR, "sigma_sensitivity.csv"))
 
-    keys  = [k for k in DATASET_KEYS if k in df.dataset_key.unique()]
-    ncols = 2
-    nrows = int(np.ceil(len(keys) / ncols))
+    layout = [
+        ("PI1_lowsep_mggn",       "PI4_highsep_mggn"),
+        ("PI3_lowsep_mlln",       "PI6_highsep_mlln"),
+        ("PI7_lowsep_imbalanced", "PI8_highsep_imbalanced"),
+    ]
 
-    fig, axes = plt.subplots(nrows, ncols * 2,
-                             figsize=(5 * ncols * 2, 3.5 * nrows))
-    axes = np.array(axes).reshape(nrows, ncols * 2)
+    nrows, ncols = 3, 2
+    fig, axes = plt.subplots(nrows, ncols, figsize=(10, 12))
 
-    for idx, dk in enumerate(keys):
-        row  = idx // ncols
-        base = (idx % ncols) * 2
-        ax_t = axes[row, base]        # timing axis
-        ax_i = axes[row, base + 1]    # iteration axis
+    for row_idx, (dk_left, dk_right) in enumerate(layout):
+        for col_idx, dk in enumerate([dk_left, dk_right]):
+            ax   = axes[row_idx, col_idx]
+            spec = DATASET_SPECS[dk]
+            sub  = df[df.dataset_key == dk]
 
-        sub   = df[df.dataset_key == dk]
-        spec  = DATASET_SPECS[dk]
-        stats = sub.groupby("sigma")[["alm_time", "alm_iter"]].agg(
-                    ["mean", "std"]).reset_index()
-        stats.columns = ["sigma", "time_mean", "time_std", "iter_mean", "iter_std"]
+            if sub.empty:
+                ax.set_visible(False)
+                continue
 
-        # Wall time
-        ax_t.errorbar(stats.sigma, stats.time_mean, yerr=stats.time_std,
-                      color=PALETTE[1], marker="o", ms=5, lw=1.6, capsize=3)
-        ax_t.set_xscale("log")
-        ax_t.set_xlabel("σ")
-        ax_t.set_ylabel("Wall time (s)")
-        ax_t.set_title(f"{spec['label']}\nWall time", fontsize=8)
-        ax_t.axvline(0.5, color="gray", ls="--", lw=0.8)
+            # ── timing stats ───────────────────────────────────────
+            time_stats = sub.groupby("sigma")["alm_time"].agg(
+                ["mean", "std"]).reset_index()
+            iter_stats = sub.groupby("sigma")["alm_iter"].agg(
+                ["mean", "std"]).reset_index()
 
-        # ALM iterations
-        ax_i.errorbar(stats.sigma, stats.iter_mean, yerr=stats.iter_std,
-                      color=PALETTE[2], marker="s", ms=5, lw=1.6, capsize=3)
-        ax_i.set_xscale("log")
-        ax_i.set_xlabel("σ")
-        ax_i.set_ylabel("ALM iterations")
-        ax_i.set_title(f"{spec['label']}\nALM iterations", fontsize=8)
-        ax_i.axvline(0.5, color="gray", ls="--", lw=0.8)
+            sigma_vals = sorted(sub["sigma"].unique())
 
-    # hide unused axes
-    total_slots = nrows * ncols * 2
-    for idx in range(len(keys) * 2, total_slots):
-        r = idx // (ncols * 2)
-        c = idx %  (ncols * 2)
-        if r < nrows:
-            axes[r, c].set_visible(False)
+            # ── wall time on primary axis ──────────────────────────
+            ax.fill_between(time_stats.sigma,
+                           time_stats["mean"] - time_stats["std"],
+                           time_stats["mean"] + time_stats["std"],
+                           alpha=0.20, color=PALETTE[0])
+            ax.plot(time_stats.sigma, time_stats["mean"],
+                   color=PALETTE[0], marker="o", ms=5, lw=1.8,
+                   label="wall time (s)")
+            ax.set_ylabel("Wall time (s)", color=PALETTE[0])
+            ax.tick_params(axis="y", labelcolor=PALETTE[0])
 
-    fig.suptitle("Wall-time and ALM Iteration Count vs σ  (mean ± std over seeds)",
-                 fontsize=11, y=1.01)
+            # ── ALM iterations on secondary axis ───────────────────
+            ax2 = ax.twinx()
+            ax2.fill_between(iter_stats.sigma,
+                            iter_stats["mean"] - iter_stats["std"],
+                            iter_stats["mean"] + iter_stats["std"],
+                            alpha=0.15, color=PALETTE[1])
+            ax2.plot(iter_stats.sigma, iter_stats["mean"],
+                    color=PALETTE[1], marker="s", ms=5, lw=1.8,
+                    ls="--", label="ALM iters")
+            ax2.set_ylabel("ALM iterations", color=PALETTE[1])
+            ax2.tick_params(axis="y", labelcolor=PALETTE[1])
+            ax2.yaxis.set_major_locator(ticker.MaxNLocator(integer=True))
+
+            # ── γ=2 boundary ───────────────────────────────────────
+            ax.axvline(0.5, color="gray", ls=":", lw=0.8)
+
+            # ── x axis ────────────────────────────────────────────
+            ax.set_xscale("log")
+            ax.set_xticks(sigma_vals)
+            ax.set_xticklabels([str(s) for s in sigma_vals],
+                              rotation=45, ha="right")
+            ax.xaxis.set_minor_locator(ticker.NullLocator())
+            ax.set_xlabel("σ")
+
+            # ── combined legend ────────────────────────────────────
+            lines1, labels1 = ax.get_legend_handles_labels()
+            lines2, labels2 = ax2.get_legend_handles_labels()
+            ax.legend(lines1 + lines2, labels1 + labels2,
+                     fontsize=7, loc="upper right",
+                     framealpha=0.9, edgecolor="lightgray")
+
+            # ── dataset info in title ──────────────────────────────
+            imbalance = spec.get("imbalance", "50/50")
+            ax.set_title(
+                f"{spec['label']}\n"
+                f"m={spec['m']}, n={spec['n']}, ratio={imbalance}",
+                fontsize=8, pad=6
+            )
+
+    fig.suptitle(
+        "Computational Cost vs Penalty Parameter σ across Dataset Regimes\n"
+        "Wall time (solid) and ALM iterations (dashed)  |  "
+        "Shaded bands = ±1 std over seeds",
+        fontsize=11, y=1.01
+    )
     fig.tight_layout()
-    out = os.path.join(FIGURES_DIR, "timing_vs_sigma.pdf")
-    fig.savefig(out)
-    print(f"  Saved → {out}")
+
+    out = os.path.join(FIGURES_DIR, "timing_vs_sigma.png")
+    fig.savefig(out, bbox_inches="tight")
+    print(f"  Saved -> {out}")
     plt.close(fig)
 
 
@@ -395,7 +378,7 @@ def fig_init_robustness(df=None, df_baselines=None):
     )
     fig.tight_layout()
 
-    out = os.path.join(FIGURES_DIR, "init_robustness_box.pdf")
+    out = os.path.join(FIGURES_DIR, "init_robustness_box.png")
     fig.savefig(out, bbox_inches="tight")
     print(f"  Saved -> {out}")
     plt.close(fig)
@@ -405,155 +388,171 @@ def fig_init_robustness(df=None, df_baselines=None):
 # Figure 5 — Constraint Residual vs Outer Iteration
 # ─────────────────────────────────────────────────────────────────────────────
 
-def fig_convergence_residuals(experiments=None):
-    if experiments is None:
-        experiments = CONVERGENCE_EXPERIMENTS
+def fig_convergence_residuals_sigma_scale():
+    """
+    PI3 only — all 3 sigma_scale values overlaid on same axes.
+    Left panel: residual traces
+    Right panel: SSN inner iterations
+    """
+    pi3_experiments = [e for e in CONVERGENCE_EXPERIMENTS
+                      if e["dataset_key"] == "PI3_lowsep_mlln"]
 
-    fig, axes = plt.subplots(1, len(experiments),
-                             figsize=(4.5 * len(experiments), 3.8),
-                             sharey=False)
-    if len(experiments) == 1:
-        axes = [axes]
+    fig, axes = plt.subplots(1, 2, figsize=(12, 4))
+    colors = [PALETTE[0], PALETTE[1], PALETTE[2]]
 
-    max_iter = ALM_DEFAULTS["max_iter_alm"]
-
-    for ax, exp in zip(axes, experiments):
-        label = exp["label"].replace(" ", "_").replace(",", "").replace("=", "")
-        path  = os.path.join(RESULTS_DIR, f"convergence_{label}.csv")
+    # ── Left: residual traces overlaid ────────────────────────────
+    ax = axes[0]
+    for exp, color in zip(pi3_experiments, colors):
+        label = exp["label"].replace(" ", "_").replace("=", "")
+        path  = os.path.join(CONVERGENCE_DIR, f"convergence_{label}.csv")
         if not os.path.exists(path):
-            ax.set_title(f"Missing: {exp['label']}", fontsize=8)
+            print(f"  Missing: {path}")
             continue
 
         trace = pd.read_csv(path)
-        iters = trace["iteration"].values
-        res   = trace["residual_inf"].values
-        tol   = ALM_DEFAULTS["tol_alm"]
+        ax.semilogy(trace["iteration"], trace["residual_inf"],
+                   color=color, lw=1.8, marker="o", ms=4,
+                   label=f"scale={exp['sigma_scale']} ({len(trace)} iters, "
+                         f"AUC={exp.get('auc', '?')})")
 
-        ax.semilogy(iters, res, color=PALETTE[0], lw=1.8, marker="o", ms=4)
-        ax.axhline(tol, color="red", ls="--", lw=1.0, label=f"tol = {tol:.0e}")
+    ax.axhline(ALM_DEFAULTS["tol_alm"], color="red", ls="--",
+               lw=1.0, label=f"tol={ALM_DEFAULTS['tol_alm']:.0e}")
+    ax.set_xlabel("ALM outer iteration")
+    ax.set_ylabel("‖constraint residual‖∞")
+    ax.set_title("Constraint Residual vs Iteration", fontsize=9, pad=6)
+    ax.legend(fontsize=7, loc="upper right",
+             framealpha=0.9, edgecolor="lightgray")
 
-        ax.set_xlabel("ALM outer iteration")
-        ax.set_ylabel("‖constraint residual‖∞")
-        ax.set_title(exp["label"], fontsize=9)
-        ax.legend(fontsize=7)
-        ax.set_xlim(0.5, max(iters) + 0.5)
-
-    fig.suptitle("Convergence: Constraint Residual vs ALM Iteration",
-                 fontsize=11, y=1.01)
-    fig.tight_layout()
-    out = os.path.join(FIGURES_DIR, "convergence_residuals.pdf")
-    fig.savefig(out)
-    print(f"  Saved → {out}")
-    plt.close(fig)
-
-
-# ─────────────────────────────────────────────────────────────────────────────
-# Figure 6 — SSN inner iterations vs outer ALM iteration
-# ─────────────────────────────────────────────────────────────────────────────
-
-def fig_convergence_ssn_iters(experiments=None):
-    if experiments is None:
-        experiments = CONVERGENCE_EXPERIMENTS
-
-    fig, axes = plt.subplots(1, len(experiments),
-                             figsize=(4.5 * len(experiments), 3.8),
-                             sharey=True)
-    if len(experiments) == 1:
-        axes = [axes]
-
-    for ax, exp in zip(axes, experiments):
-        label = exp["label"].replace(" ", "_").replace(",", "").replace("=", "")
-        path  = os.path.join(RESULTS_DIR, f"convergence_{label}.csv")
+    # ── Right: SSN inner iterations overlaid ──────────────────────
+    ax = axes[1]
+    for exp, color in zip(pi3_experiments, colors):
+        label = exp["label"].replace(" ", "_").replace("=", "")
+        path  = os.path.join(CONVERGENCE_DIR, f"convergence_{label}.csv")
         if not os.path.exists(path):
-            ax.set_title(f"Missing: {exp['label']}", fontsize=8)
             continue
 
-        trace      = pd.read_csv(path)
-        iters      = trace["iteration"].values
-        ssn_counts = trace["ssn_iters"].values
-        sigma_t    = trace["sigma_t"].values
+        trace = pd.read_csv(path)
+        ax.plot(trace["iteration"], trace["ssn_iters"],
+               color=color, lw=1.8, marker="o", ms=4,
+               label=f"scale={exp['sigma_scale']}")
 
-        # bar chart for SSN iters, colored by σ value (warmer = larger σ)
-        norm   = plt.Normalize(sigma_t.min(), sigma_t.max())
-        colors = plt.cm.plasma(norm(sigma_t))
+        # shade background where residual spiked
+        spikes = trace[trace["residual_inf"] > trace["residual_inf"].shift(1).fillna(0)]
+        for _, row in spikes.iterrows():
+            ax.axvspan(row["iteration"] - 0.4, row["iteration"] + 0.4,
+                      alpha=0.08, color="red")
 
-        bars = ax.bar(iters, ssn_counts, color=colors, edgecolor="none", alpha=0.85)
-        sm   = plt.cm.ScalarMappable(cmap="plasma", norm=norm)
-        sm.set_array([])
-        plt.colorbar(sm, ax=ax, label="σₜ", shrink=0.75)
+    ax.set_xlabel("ALM outer iteration")
+    ax.set_ylabel("SSN inner iterations")
+    ax.set_title("SSN Inner Iterations per Outer Iteration", fontsize=9, pad=6)
+    ax.legend(fontsize=7, loc="upper right",
+             framealpha=0.9, edgecolor="lightgray")
+    ax.yaxis.set_major_locator(ticker.MaxNLocator(integer=True))
 
-        ax.set_xlabel("ALM outer iteration")
-        ax.set_ylabel("SSN inner iterations")
-        ax.set_title(exp["label"], fontsize=9)
-        ax.set_xlim(0.5, max(iters) + 0.5)
-
-    fig.suptitle("SSN Inner Iterations per ALM Outer Iteration",
-                 fontsize=11, y=1.01)
+    fig.suptitle(
+        "Effect of σ Scaling Rate on Convergence — PI3 low-sep m<<n\n"
+        "Same dataset, same w₀, same σ₀=0.1  |  Only scaling rate varies  |  "
+        "Red shading = residual increased",
+        fontsize=10, y=1.02
+    )
     fig.tight_layout()
-    out = os.path.join(FIGURES_DIR, "convergence_ssn_iters.pdf")
-    fig.savefig(out)
-    print(f"  Saved → {out}")
+    out = os.path.join(FIGURES_DIR, "convergence_sigma_scale.png")
+    fig.savefig(out, bbox_inches="tight")
+    print(f"  Saved -> {out}")
     plt.close(fig)
 
 
-# ─────────────────────────────────────────────────────────────────────────────
-# Figure 7 — Compact summary table (rendered as a figure for paper)
-# ─────────────────────────────────────────────────────────────────────────────
-
-def fig_summary_table(df=None, sigma_focal=None):
+def fig_convergence_residuals_by_dataset():
     """
-    Recreate a table similar to the paper's Tables 1/2 but for ALL datasets
-    and focal σ values.  Renders as a matplotlib figure (PDF-embeddable).
+    One panel per non-PI3 dataset showing residual + SSN iters.
+    These all converge in 2 iterations so shown as a simple table-style figure.
     """
-    if df is None:
-        df = pd.read_csv(os.path.join(RESULTS_DIR, "sigma_sensitivity.csv"))
-    if sigma_focal is None:
-        from exp_config import SIGMA_FOCAL
-        sigma_focal = SIGMA_FOCAL
+    other_experiments = [e for e in CONVERGENCE_EXPERIMENTS
+                        if e["dataset_key"] != "PI3_lowsep_mlln"]
 
-    sub = df[df.sigma.isin(sigma_focal)]
-    tbl = (sub.groupby(["dataset_label", "m", "n", "sigma"])["auc"]
-              .agg(["mean", "std"])
-              .reset_index())
-    tbl.columns = ["Dataset", "m", "n", "σ", "AUC mean", "AUC std"]
-    tbl["AUC"] = tbl.apply(
-        lambda r: f"{r['AUC mean']:.4f} ± {r['AUC std']:.4f}", axis=1)
+    if not other_experiments:
+        print("  No non-PI3 experiments found")
+        return
 
-    display_cols = ["Dataset", "m", "n", "σ", "AUC"]
-    cell_data    = tbl[display_cols].values
+    # collect summary rows
+    rows = []
+    for exp in other_experiments:
+        label = exp["label"].replace(" ", "_").replace("=", "")
+        path  = os.path.join(CONVERGENCE_DIR, f"convergence_{label}.csv")
+        if not os.path.exists(path):
+            continue
+        trace = pd.read_csv(path)
+        rows.append(dict(
+            dataset   = DATASET_SPECS[exp["dataset_key"]]["label"],
+            sigma     = exp["sigma"],
+            scale     = exp["sigma_scale"],
+            iters     = len(trace),
+            min_res   = f"{trace['residual_inf'].min():.2e}",
+            max_ssn   = int(trace["ssn_iters"].max()),
+            converged = "✓"
+        ))
 
-    fig, ax = plt.subplots(figsize=(14, max(3, len(cell_data) * 0.32 + 1.2)))
-    ax.axis("off")
+    n = len(other_experiments)
+    fig, axes = plt.subplots(1, n, figsize=(4.5 * n, 4), sharey=False)
+    if n == 1:
+        axes = [axes]
 
-    tbl_obj = ax.table(
-        cellText  = cell_data,
-        colLabels = display_cols,
-        loc       = "center",
-        cellLoc   = "center",
-    )
-    tbl_obj.auto_set_font_size(False)
-    tbl_obj.set_fontsize(8)
-    tbl_obj.scale(1.15, 1.45)
+    colors = [PALETTE[0], PALETTE[1], PALETTE[2], PALETTE[3]]
 
-    # Header styling
-    for j in range(len(display_cols)):
-        cell = tbl_obj[(0, j)]
-        cell.set_facecolor("#2E4057")
-        cell.set_text_props(color="white", fontweight="bold")
+    for ax, exp, color in zip(axes, other_experiments, colors):
+        label = exp["label"].replace(" ", "_").replace("=", "")
+        path  = os.path.join(CONVERGENCE_DIR, f"convergence_{label}.csv")
+        if not os.path.exists(path):
+            ax.set_visible(False)
+            continue
 
-    # Row banding
-    for i in range(1, len(cell_data) + 1):
-        color = "#F0F4F8" if i % 2 == 0 else "white"
-        for j in range(len(display_cols)):
-            tbl_obj[(i, j)].set_facecolor(color)
+        trace = pd.read_csv(path)
+        spec  = DATASET_SPECS[exp["dataset_key"]]
+
+        # residual line
+        ax.semilogy(trace["iteration"], trace["residual_inf"],
+                   color=color, lw=1.8, marker="o", ms=6)
+        ax.axhline(ALM_DEFAULTS["tol_alm"], color="red",
+                   ls="--", lw=1.0, label=f"tol={ALM_DEFAULTS['tol_alm']:.0e}")
+
+        # SSN iters as secondary axis bars
+        ax2 = ax.twinx()
+        ax2.bar(trace["iteration"], trace["ssn_iters"],
+               alpha=0.25, color=color, width=0.4)
+        ax2.set_ylabel("SSN iters", fontsize=8)
+        ax2.yaxis.set_major_locator(ticker.MaxNLocator(integer=True))
+        ax2.tick_params(labelsize=7)
+
+        # annotations
+        n_iters  = len(trace)
+        final_res = trace["residual_inf"].iloc[-1]
+        ax.text(0.05, 0.05,
+               f"converged in {n_iters} iters\nfinal res={final_res:.2e}",
+               transform=ax.transAxes, fontsize=7,
+               verticalalignment="bottom",
+               bbox=dict(boxstyle="round,pad=0.3", facecolor="white",
+                        edgecolor="lightgray", alpha=0.8))
+
+        imbalance = spec.get("imbalance", "50/50")
+        ax.set_xlabel("ALM outer iteration")
+        ax.set_ylabel("‖constraint residual‖∞")
+        ax.set_title(
+            f"{spec['label']}\n"
+            f"σ={exp['sigma']}, scale={exp['sigma_scale']}, ratio={imbalance}",
+            fontsize=8, pad=6
+        )
+        ax.legend(fontsize=7, loc="upper right")
+        ax.xaxis.set_major_locator(ticker.MaxNLocator(integer=True))
 
     fig.suptitle(
-        f"AUC Summary (mean ± std over {len(SEEDS)} seeds)  —  focal σ ∈ {sigma_focal}",
-        fontsize=10, y=0.96)
-
-    out = os.path.join(FIGURES_DIR, "summary_table.pdf")
-    fig.savefig(out)
-    print(f"  Saved → {out}")
+        "Convergence Diagnostics — PI1, PI6, PI7\n"
+        "Residual (line) and SSN inner iterations (bars) per ALM outer iteration",
+        fontsize=11, y=1.02
+    )
+    fig.tight_layout()
+    out = os.path.join(FIGURES_DIR, "convergence_by_dataset.png")
+    fig.savefig(out, bbox_inches="tight")
+    print(f"  Saved -> {out}")
     plt.close(fig)
 
 
@@ -562,13 +561,11 @@ def fig_summary_table(df=None, sigma_focal=None):
 # ─────────────────────────────────────────────────────────────────────────────
 
 FIG_MAP = {
-    "1": ("AUC vs σ grid",             fig_auc_vs_sigma_grid),
-    #"2": ("AUC heatmap",               fig_auc_heatmap),
-    "3": ("Timing vs σ",               fig_timing_vs_sigma),
-    "4": ("Init robustness box",       fig_init_robustness),
-    "5": ("Convergence residuals",     fig_convergence_residuals),
-    "6": ("Convergence SSN iters",     fig_convergence_ssn_iters),
-    "7": ("Summary table",             fig_summary_table),
+    "1": ("AUC vs σ grid",           fig_auc_vs_sigma_grid),
+    "2": ("Init robustness box",     fig_init_robustness),
+    "3": ("Convergence sigma_scale", fig_convergence_residuals_sigma_scale),
+    "4": ("Convergence by dataset",  fig_convergence_residuals_by_dataset),
+    "5": ("Timing vs σ",             fig_timing_vs_sigma),
 }
 
 if __name__ == "__main__":

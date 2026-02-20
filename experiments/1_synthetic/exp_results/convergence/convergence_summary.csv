@@ -1,0 +1,7 @@
+label,dataset_key,sigma,sigma_scale,seed,auc,alm_iter,alm_time,converged,trace_file
+PI3 scale=2.0,PI3_lowsep_mlln,0.1,2.0,1034,0.7678571428571428,13,0.24541711807250977,1,exp_results/convergence/convergence_PI3_scale2.0.csv
+PI3 scale=1.5,PI3_lowsep_mlln,0.1,1.5,1034,0.7678571428571428,10,0.26826906204223633,1,exp_results/convergence/convergence_PI3_scale1.5.csv
+PI3 scale=1.2,PI3_lowsep_mlln,0.1,1.2,1034,0.7678571428571428,15,0.44826793670654297,1,exp_results/convergence/convergence_PI3_scale1.2.csv
+PI1 scale=2.0,PI1_lowsep_mggn,1.0,2.0,1034,0.7903111111111111,2,0.23035883903503418,1,exp_results/convergence/convergence_PI1_scale2.0.csv
+PI6 scale=2.0,PI6_highsep_mlln,1.0,2.0,1034,1.0,2,0.0026187896728515625,1,exp_results/convergence/convergence_PI6_scale2.0.csv
+PI7 scale=2.0,PI7_lowsep_imbalanced,1.0,2.0,1034,0.796875,2,0.04485177993774414,1,exp_results/convergence/convergence_PI7_scale2.0.csv
