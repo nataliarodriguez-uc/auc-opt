@@ -286,7 +286,6 @@ def fig_init_robustness(df=None, df_baselines=None):
         if os.path.exists(path):
             df_baselines = pd.read_csv(path)
 
-    # Same 3x2 paired layout as sensitivity plot
     layout = [
         ("PI1_lowsep_mggn",       "PI4_highsep_mggn"),
         ("PI3_lowsep_mlln",       "PI6_highsep_mlln"),
@@ -306,39 +305,39 @@ def fig_init_robustness(df=None, df_baselines=None):
                 ax.set_visible(False)
                 continue
 
-            # ── Box plot data ──────────────────────────────────────
-            auc_vals = sub["auc"].values
-            bp = ax.boxplot(auc_vals,
+            # ── Random w0 box plot ─────────────────────────────────
+            random_auc = sub[sub.init_type == "random"]["auc"].values
+            bp = ax.boxplot(random_auc,
+                           positions=[1],
                            patch_artist=True,
+                           widths=0.35,
                            medianprops=dict(color="black", lw=2),
                            whiskerprops=dict(lw=1.2),
                            capprops=dict(lw=1.2),
-                           flierprops=dict(marker=".", alpha=0.5, ms=5),
-                           widths=0.4)
-
+                           flierprops=dict(marker=".", alpha=0.5, ms=5))
             bp["boxes"][0].set_facecolor(PALETTE[0])
             bp["boxes"][0].set_alpha(0.6)
 
-            # ── Jittered individual points ─────────────────────────
-            jitter = np.random.normal(1, 0.04, size=len(auc_vals))
-            ax.scatter(jitter, auc_vals, alpha=0.4, s=18,
+            # jitter
+            jitter = np.random.normal(1, 0.04, size=len(random_auc))
+            ax.scatter(jitter, random_auc, alpha=0.3, s=15,
                       color=PALETTE[0], zorder=3)
+
 
             # ── Baseline reference lines ───────────────────────────
             if df_baselines is not None:
                 sub_b = df_baselines[df_baselines.dataset_key == dk]
                 if not sub_b.empty:
-                    bce_mean    = sub_b["bce_auc"].mean()
-                    bce_std     = sub_b["bce_auc"].std()
-                    libauc_mean = sub_b["libauc_auc"].mean()
-                    libauc_std  = sub_b["libauc_auc"].std()
-
+                    bce_mean = sub_b["bce_auc"].mean()
+                    bce_std  = sub_b["bce_auc"].std()
                     ax.axhline(bce_mean, color=PALETTE[1], ls="--", lw=1.5,
                                label=f"BCE ({bce_mean:.3f} ± {bce_std:.3f})")
                     ax.axhspan(max(0, bce_mean - bce_std),
                                min(1, bce_mean + bce_std),
                                alpha=0.08, color=PALETTE[1])
 
+                    libauc_mean = sub_b["libauc_auc"].mean()
+                    libauc_std  = sub_b["libauc_auc"].std()
                     ax.axhline(libauc_mean, color=PALETTE[2], ls="--", lw=1.5,
                                label=f"LibAUC ({libauc_mean:.3f} ± {libauc_std:.3f})")
                     ax.axhspan(max(0, libauc_mean - libauc_std),
@@ -349,12 +348,18 @@ def fig_init_robustness(df=None, df_baselines=None):
             ax.axhline(0.5, color="gray", ls=":", lw=0.8,
                       label="random (AUC=0.5)")
 
-            # ── Annotations ────────────────────────────────────────
-            mean_auc = auc_vals.mean()
-            std_auc  = auc_vals.std()
-            ax.text(1.3, mean_auc,
-                   f"mean={mean_auc:.3f}\nstd={std_auc:.3f}",
+            # ── Mean/std annotation for random ─────────────────────
+            mean_auc = random_auc.mean()
+            std_auc  = random_auc.std()
+            ax.text(1.45, mean_auc,
+                   f"rand: {mean_auc:.3f}±{std_auc:.3f}",
                    fontsize=7, va="center", color=PALETTE[0])
+
+            # ── x axis labels ──────────────────────────────────────
+            ax.set_xticks([1, 2, 3])
+            ax.set_xticklabels(["Random\n(20 trials)", "LR\nwarm", "LDA\nwarm"],
+                              fontsize=8)
+            ax.set_xlim(0.4, 3.6)
 
             # ── Formatting ─────────────────────────────────────────
             imbalance = spec.get("imbalance", "50/50")
@@ -363,18 +368,18 @@ def fig_init_robustness(df=None, df_baselines=None):
                 f"m={spec['m']}, n={spec['n']}, ratio={imbalance}",
                 fontsize=8, pad=6
             )
-            ax.set_xticks([])
             ax.set_ylabel("Test AUC")
             ax.set_ylim(0, 1.05)
             ax.legend(fontsize=7, loc="lower right",
                      framealpha=0.9, edgecolor="lightgray")
 
     sigma_val = df["sigma"].iloc[0]
-    n_trials  = df["trial"].max() + 1
+    n_trials  = len(df[df.init_type == "random"]) // len(DATASET_KEYS)
     fig.suptitle(
-        f"Initialization Robustness: AUC Distribution over {n_trials} Random w₀\n"
-        f"Fixed σ={sigma_val}, fixed dataset per type  |  Box = IQR, line = median",
-        fontsize=11, y=1.01
+        f"Initialization Robustness: Random w₀  |  σ={sigma_val}\n"
+        f"Box = IQR over {n_trials} random trials  |  "
+        f"Dashed = baseline means",
+        fontsize=10, y=1.01
     )
     fig.tight_layout()
 
@@ -390,70 +395,88 @@ def fig_init_robustness(df=None, df_baselines=None):
 
 def fig_convergence_residuals_sigma_scale():
     """
-    PI3 only — all 3 sigma_scale values overlaid on same axes.
+    PI3 only — sigma_scale comparison + warm start comparison overlaid.
     Left panel: residual traces
     Right panel: SSN inner iterations
     """
     pi3_experiments = [e for e in CONVERGENCE_EXPERIMENTS
                       if e["dataset_key"] == "PI3_lowsep_mlln"]
 
-    fig, axes = plt.subplots(1, 2, figsize=(12, 4))
-    colors = [PALETTE[0], PALETTE[1], PALETTE[2]]
+    # separate by type for different styling
+    scale_exps     = [e for e in pi3_experiments if e.get("warm_start") is None]
 
-    # ── Left: residual traces overlaid ────────────────────────────
-    ax = axes[0]
-    for exp, color in zip(pi3_experiments, colors):
-        label = exp["label"].replace(" ", "_").replace("=", "")
-        path  = os.path.join(CONVERGENCE_DIR, f"convergence_{label}.csv")
-        if not os.path.exists(path):
-            print(f"  Missing: {path}")
-            continue
+    fig, axes = plt.subplots(1, 2, figsize=(14, 5))
 
-        trace = pd.read_csv(path)
-        ax.semilogy(trace["iteration"], trace["residual_inf"],
-                   color=color, lw=1.8, marker="o", ms=4,
-                   label=f"scale={exp['sigma_scale']} ({len(trace)} iters, "
-                         f"AUC={exp.get('auc', '?')})")
+    scale_colors     = [PALETTE[0], PALETTE[1], PALETTE[2]]
 
-    ax.axhline(ALM_DEFAULTS["tol_alm"], color="red", ls="--",
-               lw=1.0, label=f"tol={ALM_DEFAULTS['tol_alm']:.0e}")
-    ax.set_xlabel("ALM outer iteration")
-    ax.set_ylabel("‖constraint residual‖∞")
-    ax.set_title("Constraint Residual vs Iteration", fontsize=9, pad=6)
-    ax.legend(fontsize=7, loc="upper right",
-             framealpha=0.9, edgecolor="lightgray")
+    for panel_idx, ax in enumerate(axes):
+        ylabel = "‖constraint residual‖∞" if panel_idx == 0 else "SSN inner iterations"
+        title  = "Constraint Residual vs Iteration" if panel_idx == 0 \
+                 else "SSN Inner Iterations per Outer Iteration"
 
-    # ── Right: SSN inner iterations overlaid ──────────────────────
-    ax = axes[1]
-    for exp, color in zip(pi3_experiments, colors):
-        label = exp["label"].replace(" ", "_").replace("=", "")
-        path  = os.path.join(CONVERGENCE_DIR, f"convergence_{label}.csv")
-        if not os.path.exists(path):
-            continue
+        # ── sigma_scale comparison lines ───────────────────────────
+        for exp, color in zip(scale_exps, scale_colors):
+            label_key = exp["label"].replace(" ", "_").replace("=", "")
+            path      = os.path.join(CONVERGENCE_DIR,
+                                    f"convergence_{label_key}.csv")
+            if not os.path.exists(path):
+                print(f"  Missing: {path}")
+                continue
 
-        trace = pd.read_csv(path)
-        ax.plot(trace["iteration"], trace["ssn_iters"],
-               color=color, lw=1.8, marker="o", ms=4,
-               label=f"scale={exp['sigma_scale']}")
+            trace    = pd.read_csv(path)
+            auc_val  = trace.get("auc", [None]).iloc[-1] if "auc" in trace.columns else "?"
+            leg_label = (f"random, scale={exp['sigma_scale']} "
+                        f"({len(trace)} iters)")
 
-        # shade background where residual spiked
-        spikes = trace[trace["residual_inf"] > trace["residual_inf"].shift(1).fillna(0)]
-        for _, row in spikes.iterrows():
-            ax.axvspan(row["iteration"] - 0.4, row["iteration"] + 0.4,
-                      alpha=0.08, color="red")
+            if panel_idx == 0:
+                ax.semilogy(trace["iteration"], trace["residual_inf"],
+                           color=color, lw=1.8, marker="o", ms=4,
+                           label=leg_label)
+                # shade spikes
+                spikes = trace[trace["residual_inf"] >
+                               trace["residual_inf"].shift(1).fillna(0)]
+                for _, row in spikes.iterrows():
+                    ax.axvspan(row["iteration"] - 0.4, row["iteration"] + 0.4,
+                              alpha=0.06, color="red")
+            else:
+                ax.plot(trace["iteration"], trace["ssn_iters"],
+                       color=color, lw=1.8, marker="o", ms=4,
+                       label=leg_label)
 
-    ax.set_xlabel("ALM outer iteration")
-    ax.set_ylabel("SSN inner iterations")
-    ax.set_title("SSN Inner Iterations per Outer Iteration", fontsize=9, pad=6)
-    ax.legend(fontsize=7, loc="upper right",
-             framealpha=0.9, edgecolor="lightgray")
-    ax.yaxis.set_major_locator(ticker.MaxNLocator(integer=True))
+        # ── tolerance line (residual panel only) ───────────────────
+        if panel_idx == 0:
+            ax.axhline(ALM_DEFAULTS["tol_alm"], color="red", ls=":",
+                      lw=1.0, label=f"tol={ALM_DEFAULTS['tol_alm']:.0e}")
+
+        ax.set_xlabel("ALM outer iteration")
+        ax.set_ylabel(ylabel)
+        ax.set_title(title, fontsize=9, pad=6)
+        ax.legend(fontsize=7, loc="upper right",
+                 framealpha=0.9, edgecolor="lightgray")
+
+        if panel_idx == 1:
+            ax.yaxis.set_major_locator(ticker.MaxNLocator(integer=True))
+        ax.xaxis.set_major_locator(ticker.MaxNLocator(integer=True))
+
+    # load summary to get AUC values for suptitle annotation
+    sum_path = os.path.join(CONVERGENCE_DIR, "convergence_summary.csv")
+    auc_note = ""
+    if os.path.exists(sum_path):
+        df_sum   = pd.read_csv(sum_path)
+        pi3_rows = df_sum[df_sum["dataset_key"] == "PI3_lowsep_mlln"]
+        if not pi3_rows.empty:
+            parts = []
+            for _, row in pi3_rows.iterrows():
+                init = row.get("warm_start", "random")
+                parts.append(f"{init} AUC={row['auc']:.3f}")
+            auc_note = "  |  " + "   ".join(parts)
 
     fig.suptitle(
-        "Effect of σ Scaling Rate on Convergence — PI3 low-sep m<<n\n"
-        "Same dataset, same w₀, same σ₀=0.1  |  Only scaling rate varies  |  "
-        "Red shading = residual increased",
-        fontsize=10, y=1.02
+        "Convergence on PI3 low-sep m<<n  —  Random Init (solid) vs "
+        "Warm Starts (dashed)\n"
+        "Left: constraint residual  |  Right: SSN inner iterations  |  "
+        f"Red shading = residual spike{auc_note}",
+        fontsize=9, y=1.02
     )
     fig.tight_layout()
     out = os.path.join(FIGURES_DIR, "convergence_sigma_scale.png")
@@ -465,7 +488,7 @@ def fig_convergence_residuals_sigma_scale():
 def fig_convergence_residuals_by_dataset():
     """
     One panel per non-PI3 dataset showing residual + SSN iters.
-    These all converge in 2 iterations so shown as a simple table-style figure.
+    Handles warm start variants if present.
     """
     other_experiments = [e for e in CONVERGENCE_EXPERIMENTS
                         if e["dataset_key"] != "PI3_lowsep_mlln"]
@@ -473,24 +496,6 @@ def fig_convergence_residuals_by_dataset():
     if not other_experiments:
         print("  No non-PI3 experiments found")
         return
-
-    # collect summary rows
-    rows = []
-    for exp in other_experiments:
-        label = exp["label"].replace(" ", "_").replace("=", "")
-        path  = os.path.join(CONVERGENCE_DIR, f"convergence_{label}.csv")
-        if not os.path.exists(path):
-            continue
-        trace = pd.read_csv(path)
-        rows.append(dict(
-            dataset   = DATASET_SPECS[exp["dataset_key"]]["label"],
-            sigma     = exp["sigma"],
-            scale     = exp["sigma_scale"],
-            iters     = len(trace),
-            min_res   = f"{trace['residual_inf'].min():.2e}",
-            max_ssn   = int(trace["ssn_iters"].max()),
-            converged = "✓"
-        ))
 
     n = len(other_experiments)
     fig, axes = plt.subplots(1, n, figsize=(4.5 * n, 4), sharey=False)
@@ -500,22 +505,27 @@ def fig_convergence_residuals_by_dataset():
     colors = [PALETTE[0], PALETTE[1], PALETTE[2], PALETTE[3]]
 
     for ax, exp, color in zip(axes, other_experiments, colors):
-        label = exp["label"].replace(" ", "_").replace("=", "")
-        path  = os.path.join(CONVERGENCE_DIR, f"convergence_{label}.csv")
+        label_key = exp["label"].replace(" ", "_").replace("=", "")
+        path      = os.path.join(CONVERGENCE_DIR,
+                                f"convergence_{label_key}.csv")
         if not os.path.exists(path):
             ax.set_visible(False)
             continue
 
-        trace = pd.read_csv(path)
-        spec  = DATASET_SPECS[exp["dataset_key"]]
+        trace     = pd.read_csv(path)
+        spec      = DATASET_SPECS[exp["dataset_key"]]
+        warm_start = exp.get("warm_start", None)
+        ls        = "--" if warm_start else "-"
+        marker    = "D" if warm_start else "o"
 
-        # residual line
+        # ── residual line ──────────────────────────────────────────
         ax.semilogy(trace["iteration"], trace["residual_inf"],
-                   color=color, lw=1.8, marker="o", ms=6)
+                   color=color, lw=1.8, marker=marker, ms=6, ls=ls)
         ax.axhline(ALM_DEFAULTS["tol_alm"], color="red",
-                   ls="--", lw=1.0, label=f"tol={ALM_DEFAULTS['tol_alm']:.0e}")
+                   ls=":", lw=1.0,
+                   label=f"tol={ALM_DEFAULTS['tol_alm']:.0e}")
 
-        # SSN iters as secondary axis bars
+        # ── SSN iters as secondary axis bars ──────────────────────
         ax2 = ax.twinx()
         ax2.bar(trace["iteration"], trace["ssn_iters"],
                alpha=0.25, color=color, width=0.4)
@@ -523,22 +533,34 @@ def fig_convergence_residuals_by_dataset():
         ax2.yaxis.set_major_locator(ticker.MaxNLocator(integer=True))
         ax2.tick_params(labelsize=7)
 
-        # annotations
-        n_iters  = len(trace)
+        # ── annotations ───────────────────────────────────────────
+        n_iters   = len(trace)
         final_res = trace["residual_inf"].iloc[-1]
+        init_str  = f"warm={warm_start}" if warm_start else "random init"
+
+        # get AUC from summary if available
+        sum_path = os.path.join(CONVERGENCE_DIR, "convergence_summary.csv")
+        auc_str  = ""
+        if os.path.exists(sum_path):
+            df_sum = pd.read_csv(sum_path)
+            row    = df_sum[df_sum["label"] == exp["label"]]
+            if not row.empty:
+                auc_str = f"\nAUC={row['auc'].values[0]:.3f}"
+
         ax.text(0.05, 0.05,
-               f"converged in {n_iters} iters\nfinal res={final_res:.2e}",
+               f"{init_str}\n{n_iters} iters  res={final_res:.2e}{auc_str}",
                transform=ax.transAxes, fontsize=7,
                verticalalignment="bottom",
                bbox=dict(boxstyle="round,pad=0.3", facecolor="white",
                         edgecolor="lightgray", alpha=0.8))
 
-        imbalance = spec.get("imbalance", "50/50")
+        imbalance  = spec.get("imbalance", "50/50")
+        scale_used = exp.get("sigma_scale", ALM_DEFAULTS["sigma_scale"])
         ax.set_xlabel("ALM outer iteration")
         ax.set_ylabel("‖constraint residual‖∞")
         ax.set_title(
             f"{spec['label']}\n"
-            f"σ={exp['sigma']}, scale={exp['sigma_scale']}, ratio={imbalance}",
+            f"σ={exp['sigma']}, scale={scale_used}, ratio={imbalance}",
             fontsize=8, pad=6
         )
         ax.legend(fontsize=7, loc="upper right")
@@ -554,42 +576,3 @@ def fig_convergence_residuals_by_dataset():
     fig.savefig(out, bbox_inches="tight")
     print(f"  Saved -> {out}")
     plt.close(fig)
-
-
-# ─────────────────────────────────────────────────────────────────────────────
-# CLI
-# ─────────────────────────────────────────────────────────────────────────────
-
-FIG_MAP = {
-    "1": ("AUC vs σ grid",           fig_auc_vs_sigma_grid),
-    "2": ("Init robustness box",     fig_init_robustness),
-    "3": ("Convergence sigma_scale", fig_convergence_residuals_sigma_scale),
-    "4": ("Convergence by dataset",  fig_convergence_residuals_by_dataset),
-    "5": ("Timing vs σ",             fig_timing_vs_sigma),
-}
-
-if __name__ == "__main__":
-    parser = argparse.ArgumentParser()
-    parser.add_argument("--fig", default="all",
-                        help="Figure number (1-7) or 'all'")
-    args = parser.parse_args()
-
-    print("=" * 50)
-    print("  Tier 1 — Generating Figures")
-    print("=" * 50)
-
-    targets = FIG_MAP.keys() if args.fig == "all" else [args.fig]
-    for key in targets:
-        if key not in FIG_MAP:
-            print(f"  Unknown figure: {key}")
-            continue
-        name, fn = FIG_MAP[key]
-        print(f"\n[{key}] {name}")
-        try:
-            fn()
-        except FileNotFoundError as e:
-            print(f"  ⚠️  Data not found — run experiment_runner.py first.  ({e})")
-        except Exception as e:
-            print(f"  ⚠️  Error: {e}")
-
-    print("\n✅ Done.")

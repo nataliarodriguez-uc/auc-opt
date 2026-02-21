@@ -1,19 +1,21 @@
 """
 Tier 1 Experiment Runner
 =========================
-Runs three sub-experiments and saves raw results as CSV/npy.
+Runs four sub-experiments and saves raw results as CSV.
 
 Sub-experiments
 ---------------
 1. sigma_sensitivity   – AUC, wall-time, ALM-iters vs σ over N_SEEDS seeds
-2. init_robustness     – AUC distribution over N_INIT_TRIALS random w0s (fixed σ)
+2. init_robustness     – AUC distribution over N_INIT_TRIALS random w0s +
+                         warm start strategies (LR, LDA) on fixed dataset/σ
 3. convergence_diag    – Per-outer-iteration residual + SSN-iter traces
+4. baselines           – BCE and LibAUC on same datasets/seeds (σ-independent)
 
 Usage
 -----
-    python experiment_runner.py [--exp all|sigma|init|conv] [--dataset KEY]
+    python exp_runner.py [--exp all|sigma|init|conv|baselines] [--dataset KEY]
 
-Results saved to RESULTS_DIR (defined in experiment_config.py).
+Results saved to RESULTS_DIR (defined in exp_config.py).
 """
 
 import os
@@ -25,7 +27,7 @@ import pandas as pd
 from copy import deepcopy
 from sklearn.model_selection import train_test_split
 
-# ── project imports (adjust sys.path if needed) ───────────────────────────────
+# ── project imports ───────────────────────────────────────────────────────────
 sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), "../../")))
 
 from aucopt.data.problem_svmdata import DataSet_SVM
@@ -42,7 +44,7 @@ from exp_config import (
     DATASET_SPECS, DATASET_KEYS,
     N_INIT_TRIALS, SIGMA_FOR_INIT_EXPERIMENT,
     CONVERGENCE_EXPERIMENTS,
-    RESULTS_DIR, FIGURES_DIR,CONVERGENCE_DIR
+    RESULTS_DIR, FIGURES_DIR, CONVERGENCE_DIR,
 )
 
 
@@ -57,7 +59,16 @@ def make_params():
     LS = LineSearchParameters(**LS_DEFAULTS)
     return AP, SP, LS
 
+
 def build_dataset(spec, seed):
+    """
+    Build a DataSet_SVM and a ProblemInstance with train/test split.
+
+    Returns
+    -------
+    ds : DataSet_SVM  (full data)
+    PI : ProblemInstance with PI.X_test and PI.y_test attached
+    """
     ds = DataSet_SVM(
         m            = spec["m"],
         n            = spec["n"],
@@ -68,16 +79,16 @@ def build_dataset(spec, seed):
     )
 
     X_train, X_test, y_train, y_test = train_test_split(
-        ds.X.T, ds.y,                    # sklearn expects (n_samples, n_features)
-        train_size = TRAIN_RATIO,
-        stratify   = ds.y,
+        ds.X.T, ds.y,
+        train_size   = TRAIN_RATIO,
+        stratify     = ds.y,
         random_state = seed,
     )
     X_train, X_test = X_train.T, X_test.T   # back to (d, n) convention
 
     PI = ProblemInstance(X_train, y_train, seed=seed)
 
-    # Attach test set manually so evaluate_auc() can find it
+    # Attach test set so evaluate_auc() can find it
     PI.X_test = X_test
     PI.y_test = y_test
 
@@ -86,65 +97,34 @@ def build_dataset(spec, seed):
 
 def evaluate_auc(w, PI):
     """Compute test AUC from a trained weight vector."""
-    scores  = w @ PI.X_test
+    scores = w @ PI.X_test
     return roc_auc_score(PI.y_test, scores)
 
 
-def run_single(sigma, PI, seed):
+# ─────────────────────────────────────────────────────────────────────────────
+# Core ALM solver with full diagnostics
+# ─────────────────────────────────────────────────────────────────────────────
+
+def run_alm_with_diagnostics(sigma, PI, seed,
+                             sigma_scale=None,
+                             use_provided_w0=False):
     """
-    Run one ALM solve.
+    Runs ALM while capturing constraint residual, objective value, and SSN
+    inner iteration count at every outer ALM iteration.
 
     Parameters
     ----------
-    sigma : float   penalty parameter σ
-    PI    : ProblemInstance  (already constructed, w0/lambda0 will be set here)
-    seed  : int     for reproducible w0
+    sigma           : float   initial penalty parameter σ
+    PI              : ProblemInstance
+    seed            : int     used for random w0 (ignored if use_provided_w0=True)
+    sigma_scale     : float   penalty scaling rate (default: ALM_DEFAULTS value)
+    use_provided_w0 : bool    if True, PI.w0 is used as-is (warm start set externally)
 
     Returns
     -------
-    result : dict with keys auc, alm_iter, alm_time, L_final, ssn_iters, residuals
-    """
-    np.random.seed(seed)
-    PI.w0      = np.random.randn(PI.d)
-    PI.lambda0 = np.zeros(PI.n_pairs)
-
-    AP, SP, LS = make_params()
-    t0 = time.time()
-    almvar, almlog = run_alm(sigma, TAU0, ALPHA0, PI, AP, SP, LS)
-    elapsed = time.time() - t0
-
-    T = almlog.alm_iter  # actual iterations used
-
-    # Constraint residual trace (inf-norm per outer iteration)
-    residuals = []
-    for t in range(T):
-        # Reconstruct from ssn_times being non-zero as a proxy for "used"
-        # The residual itself is stored in almvar only at the end;
-        # we track it via a patched ALM – see ConvergenceTracker below.
-        residuals.append(None)  # placeholder; see ConvergenceTracker
-
-    return dict(
-        auc       = evaluate_auc(almvar.w, PI),
-        alm_iter  = T,
-        alm_time  = almlog.alm_time,
-        L_final   = almlog.L_final,
-        ssn_iters = almlog.ssn_iters[:T].tolist(),
-        w         = almvar.w.copy(),
-    )
-
-
-# ─────────────────────────────────────────────────────────────────────────────
-# Patched ALM that records residuals per outer iteration
-# ─────────────────────────────────────────────────────────────────────────────
-
-def run_alm_with_diagnostics(sigma, PI, seed, sigma_scale = 2.0):
-    """
-    Wraps run_alm but additionally captures the constraint-residual
-    and objective value at every outer ALM iteration.
-
-    Returns
-    -------
-    result : dict   (same as run_single + residual_trace, obj_trace, ssn_iter_trace)
+    dict with keys:
+        auc, alm_iter, alm_time, L_final,
+        residual_trace, obj_trace, ssn_iter_trace, w
     """
     import warnings
     from aucopt.optim.variables import ALMVar, ProxVar, SSNVar, ALMLog
@@ -155,40 +135,50 @@ def run_alm_with_diagnostics(sigma, PI, seed, sigma_scale = 2.0):
 
     warnings.filterwarnings("ignore", category=RuntimeWarning)
 
-    np.random.seed(seed)
-    PI.w0      = np.random.randn(PI.d)
+    # ── Initialization ─────────────────────────────────────────────
+    if use_provided_w0:
+        # warm start already set on PI.w0 externally — use it as-is
+        pass
+    else:
+        np.random.seed(seed)
+        PI.w0 = np.random.randn(PI.d)
+
     PI.lambda0 = np.zeros(PI.n_pairs)
 
+    # ── Parameters ─────────────────────────────────────────────────
     AP, SP, LS = make_params()
-    SP_local = deepcopy(SP)
-    AP_local = deepcopy(AP)
-    LS_local = deepcopy(LS)
+    SP_local   = deepcopy(SP)
+    AP_local   = deepcopy(AP)
+    LS_local   = deepcopy(LS)
+
+    if sigma_scale is not None:
+        AP_local.sigma_scale = sigma_scale
 
     K_len     = PI.n_pairs
     inv_K_len = 1.0 / K_len
-    AP_local.sigma_scale = sigma_scale
 
+    # ── ALM state ──────────────────────────────────────────────────
     almlog = ALMLog(AP_local.max_iter_alm, SP_local.max_iter_ssn, LS_local.max_iter_ls)
     almlog.alm_time = time.time()
 
-    almvar        = ALMVar(TAU0, sigma, PI)
-    almvar.lambd  = PI.lambda0.copy()
-    almvar.sigma  = sigma
-    almvar.tau    = TAU0
-    almvar.w[:]   = PI.w0
-    almvar.y      = np.zeros(K_len)
-    almvar.alpha  = ALPHA0
+    almvar          = ALMVar(TAU0, sigma, PI)
+    almvar.lambd    = PI.lambda0.copy()
+    almvar.sigma    = sigma
+    almvar.tau      = TAU0
+    almvar.w[:]     = PI.w0
+    almvar.y        = np.zeros(K_len)
+    almvar.alpha    = ALPHA0
 
-    ssnvar        = SSNVar(PI)
+    ssnvar          = SSNVar(PI)
     ssnvar.w_ssn[:] = PI.w0
-    proxvar       = ProxVar(PI.d, K_len, almvar.tau)
-
-    temp_res      = np.empty(K_len)
+    proxvar         = ProxVar(PI.d, K_len, almvar.tau)
+    temp_res        = np.empty(K_len)
 
     residual_trace  = []
     obj_trace       = []
     ssn_iter_trace  = []
 
+    # ── Main ALM loop ──────────────────────────────────────────────
     for t in range(AP_local.max_iter_alm):
         update_tol(SP_local, t)
         update_iter(SP_local, t)
@@ -225,14 +215,14 @@ def run_alm_with_diagnostics(sigma, PI, seed, sigma_scale = 2.0):
     almlog.alm_time = time.time() - almlog.alm_time
 
     return dict(
-        auc             = evaluate_auc(almvar.w, PI),
-        alm_iter        = almlog.alm_iter,
-        alm_time        = almlog.alm_time,
-        L_final         = almlog.L_final,
-        residual_trace  = residual_trace,
-        obj_trace       = obj_trace,
-        ssn_iter_trace  = ssn_iter_trace,
-        w               = almvar.w.copy(),
+        auc            = evaluate_auc(almvar.w, PI),
+        alm_iter       = almlog.alm_iter,
+        alm_time       = almlog.alm_time,
+        L_final        = almlog.L_final,
+        residual_trace = residual_trace,
+        obj_trace      = obj_trace,
+        ssn_iter_trace = ssn_iter_trace,
+        w              = almvar.w.copy(),
     )
 
 
@@ -241,12 +231,11 @@ def run_alm_with_diagnostics(sigma, PI, seed, sigma_scale = 2.0):
 # ─────────────────────────────────────────────────────────────────────────────
 
 def run_sigma_sensitivity(dataset_keys=None, sigma_grid=None, seeds=None, verbose=True):
-    
     """
     For every (dataset, σ, seed) triple, run one ALM solve and record:
         dataset_key, sigma, gamma, seed, auc, alm_iter, alm_time, L_final
 
-    Saves results/tier1/sigma_sensitivity.csv
+    Saves results/sigma_sensitivity.csv
     """
     if dataset_keys is None: dataset_keys = DATASET_KEYS
     if sigma_grid   is None: sigma_grid   = SIGMA_GRID
@@ -266,19 +255,20 @@ def run_sigma_sensitivity(dataset_keys=None, sigma_grid=None, seeds=None, verbos
                 res   = run_alm_with_diagnostics(sigma, PI, seed)
 
                 records.append(dict(
-                    dataset_key = dk,
+                    dataset_key   = dk,
                     dataset_label = spec["label"],
-                    m           = spec["m"],
-                    n           = spec["n"],
-                    sep         = "high" if spec["sep_distance"] >= 2.0 else "low",
-                    regime      = "m>>n" if spec["m"] > spec["n"] else "m<<n",
-                    sigma       = sigma,
-                    gamma       = round(1.0 / sigma, 6),
-                    seed        = seed,
-                    auc         = res["auc"],
-                    alm_iter    = res["alm_iter"],
-                    alm_time    = res["alm_time"],
-                    L_final     = res["L_final"],
+                    m             = spec["m"],
+                    n             = spec["n"],
+                    imbalance     = spec.get("imbalance", "50/50"),
+                    sep           = "high" if spec["sep_distance"] >= 2.0 else "low",
+                    regime        = "m>>n" if spec["m"] > spec["n"] else "m<<n",
+                    sigma         = sigma,
+                    gamma         = round(1.0 / sigma, 6),
+                    seed          = seed,
+                    auc           = res["auc"],
+                    alm_iter      = res["alm_iter"],
+                    alm_time      = res["alm_time"],
+                    L_final       = res["L_final"],
                 ))
 
                 done += 1
@@ -301,10 +291,13 @@ def run_sigma_sensitivity(dataset_keys=None, sigma_grid=None, seeds=None, verbos
 def run_init_robustness(dataset_keys=None, sigma=None, n_trials=None,
                         data_seed=None, verbose=True):
     """
-    Fix σ and a dataset.  Run N_INIT_TRIALS with different random w0 seeds.
-    The dataset itself is generated with a single fixed seed (data_seed).
+    Fix σ and dataset. Run N_INIT_TRIALS with different random w0 seeds,
+    then run each warm start strategy (LR, LDA) for direct comparison.
+    Dataset is fixed via data_seed — only w0 changes across trials.
 
-    Saves results/tier1/init_robustness.csv
+    Results tagged with init_type: "random", "lr", or "lda"
+
+    Saves results/init_robustness.csv
     """
     if dataset_keys is None: dataset_keys = DATASET_KEYS
     if sigma        is None: sigma        = SIGMA_FOR_INIT_EXPERIMENT
@@ -313,31 +306,31 @@ def run_init_robustness(dataset_keys=None, sigma=None, n_trials=None,
 
     os.makedirs(RESULTS_DIR, exist_ok=True)
     records = []
-
-    # Use a dense set of init seeds
     init_seeds = list(range(1000, 1000 + n_trials))
 
     for dk in dataset_keys:
         spec = DATASET_SPECS[dk]
-        _, PI = build_dataset(spec, data_seed)   # fixed data
+        _, PI = build_dataset(spec, data_seed)   # fixed dataset, never changes
 
+        # ── Random initializations ─────────────────────────────────
         for trial, iseed in enumerate(init_seeds):
-            res = run_alm_with_diagnostics(sigma, PI, iseed)
-
+            res = run_alm_with_diagnostics(sigma, PI, seed=iseed,
+                                           use_provided_w0=False)
             records.append(dict(
                 dataset_key   = dk,
                 dataset_label = spec["label"],
+                imbalance     = spec.get("imbalance", "50/50"),
                 sigma         = sigma,
                 trial         = trial,
                 init_seed     = iseed,
+                init_type     = "random",
                 auc           = res["auc"],
                 alm_iter      = res["alm_iter"],
                 alm_time      = res["alm_time"],
                 converged     = int(res["alm_iter"] < ALM_DEFAULTS["max_iter_alm"]),
             ))
-
             if verbose:
-                print(f"  {dk:35s} trial {trial+1:3d}/{n_trials}  "
+                print(f"  {dk:35s} random trial {trial+1:3d}/{n_trials}  "
                       f"AUC={res['auc']:.4f}  iter={res['alm_iter']}")
 
     df = pd.DataFrame(records)
@@ -356,10 +349,14 @@ def run_convergence_diagnostics(experiments=None, verbose=True):
     For each entry in CONVERGENCE_EXPERIMENTS, run the patched ALM and
     save the per-iteration residual + SSN-iter traces.
 
+    Supports optional warm_start key in experiment dict.
+    If warm_start is set ("lr" or "lda"), PI.w0 is set from the registry
+    instead of random initialization.
+
     Saves
     -----
-    results/tier1/convergence_<label>.csv  (one per experiment)
-    results/tier1/convergence_summary.csv  (one row per experiment)
+    results/convergence/convergence_<label>.csv  (one per experiment)
+    results/convergence/convergence_summary.csv  (one row per experiment)
     """
     if experiments is None: experiments = CONVERGENCE_EXPERIMENTS
     os.makedirs(CONVERGENCE_DIR, exist_ok=True)
@@ -367,19 +364,24 @@ def run_convergence_diagnostics(experiments=None, verbose=True):
     summary = []
 
     for exp in experiments:
-        dk    = exp["dataset_key"]
-        sigma = exp["sigma"]
-        seed  = exp["seed"]
-        sigma_scale = exp.get("sigma_scale", 2.0)
-        label = exp["label"].replace(" ", "_").replace(",", "").replace("=", "")
+        dk          = exp["dataset_key"]
+        sigma       = exp["sigma"]
+        seed        = exp["seed"]
+        sigma_scale = exp.get("sigma_scale", ALM_DEFAULTS["sigma_scale"])
+        warm_start  = exp.get("warm_start", None)
+        label       = exp["label"].replace(" ", "_").replace(",", "").replace("=", "")
 
         spec  = DATASET_SPECS[dk]
         _, PI = build_dataset(spec, seed)
 
         if verbose:
-            print(f"  Convergence diag: {exp['label']} ...")
+            ws_str = f"warm={warm_start}" if warm_start else "random init"
+            print(f"  Convergence diag: {exp['label']}  ({ws_str}) ...")
 
-        res = run_alm_with_diagnostics(sigma, PI, seed, sigma_scale = sigma_scale)
+    
+        res   = run_alm_with_diagnostics(sigma, PI, seed,
+                                             sigma_scale=sigma_scale,
+                                             use_provided_w0=False)
 
         T = len(res["residual_trace"])
         df_trace = pd.DataFrame({
@@ -387,7 +389,8 @@ def run_convergence_diagnostics(experiments=None, verbose=True):
             "residual_inf" : res["residual_trace"],
             "obj_value"    : res["obj_trace"],
             "ssn_iters"    : res["ssn_iter_trace"],
-            "sigma_t"      : [sigma * (ALM_DEFAULTS["sigma_scale"] ** t) for t in range(T)],
+            "sigma_t"      : [sigma * (sigma_scale ** t) for t in range(T)],
+            "warm_start"   : warm_start if warm_start else "random",
         })
         trace_path = os.path.join(CONVERGENCE_DIR, f"convergence_{label}.csv")
         df_trace.to_csv(trace_path, index=False)
@@ -397,6 +400,7 @@ def run_convergence_diagnostics(experiments=None, verbose=True):
             dataset_key = dk,
             sigma       = sigma,
             sigma_scale = sigma_scale,
+            warm_start  = warm_start if warm_start else "random",
             seed        = seed,
             auc         = res["auc"],
             alm_iter    = res["alm_iter"],
@@ -407,7 +411,8 @@ def run_convergence_diagnostics(experiments=None, verbose=True):
 
         if verbose:
             print(f"    → AUC={res['auc']:.4f}  iter={res['alm_iter']}  "
-                  f"time={res['alm_time']:.2f}s")
+                  f"time={res['alm_time']:.2f}s  scale={sigma_scale}  "
+                  f"init={warm_start if warm_start else 'random'}")
 
     df_sum = pd.DataFrame(summary)
     sum_path = os.path.join(CONVERGENCE_DIR, "convergence_summary.csv")
@@ -415,80 +420,54 @@ def run_convergence_diagnostics(experiments=None, verbose=True):
     print(f"\n✅ Saved convergence summary → {sum_path}\n")
     return df_sum
 
+
 # ─────────────────────────────────────────────────────────────────────────────
 # Sub-experiment 4: Baselines
 # ─────────────────────────────────────────────────────────────────────────────
 
-def run_baselines(verbose=True):
+def run_baselines(dataset_keys=None, seeds=None, verbose=True):
     """
-    Run BCE and LibAUC once per dataset per seed (no sigma dependence).
-    Saves results/tier1/baselines.csv
+    Run BCE and LibAUC once per (dataset, seed). σ-independent.
+    Saves results/baselines.csv
     """
+    if dataset_keys is None: dataset_keys = DATASET_KEYS
+    if seeds        is None: seeds        = SEEDS
+
     os.makedirs(RESULTS_DIR, exist_ok=True)
     records = []
 
-    for dk in DATASET_KEYS:
+    total = len(dataset_keys) * len(seeds)
+    done  = 0
+
+    for dk in dataset_keys:
         spec = DATASET_SPECS[dk]
-        for seed in SEEDS:
+        for seed in seeds:
             _, PI = build_dataset(spec, seed)
 
-            # BCE expects (n_samples, n_features) so transpose
+            # baselines expect (n_samples, n_features)
             X_train = PI.X.T
             X_test  = PI.X_test.T
 
             bce_auc, _    = evaluate_pytorch_bce(X_train, X_test, PI.y, PI.y_test)
             libauc_result = evaluate_libauc(X_train, X_test, PI.y, PI.y_test)
-            libauc_auc    = libauc_result[0] if isinstance(libauc_result, tuple) else None
+            libauc_auc    = libauc_result[0] if isinstance(libauc_result, tuple) else libauc_result
 
             records.append(dict(
                 dataset_key   = dk,
                 dataset_label = spec["label"],
+                imbalance     = spec.get("imbalance", "50/50"),
                 seed          = seed,
                 bce_auc       = bce_auc,
                 libauc_auc    = libauc_auc,
             ))
 
+            done += 1
             if verbose:
-                print(f"  {dk:35s} seed={seed}  "
+                print(f"  [{done}/{total}] {dk:35s} seed={seed}  "
                       f"BCE={bce_auc:.4f}  LibAUC={libauc_auc:.4f}")
 
     df = pd.DataFrame(records)
     out = os.path.join(RESULTS_DIR, "baselines.csv")
     df.to_csv(out, index=False)
-    print(f"\n✅ Saved baselines -> {out}\n")
+    print(f"\n✅ Saved baselines → {out}  ({len(df)} rows)\n")
     return df
-
-# ─────────────────────────────────────────────────────────────────────────────
-# CLI entry point
-# ─────────────────────────────────────────────────────────────────────────────
-
-if __name__ == "__main__":
-    parser = argparse.ArgumentParser()
-    parser.add_argument("--exp",
-                        default="all",
-                        choices=["all", "sigma", "init", "conv"],
-                        help="Which sub-experiment to run")
-    parser.add_argument("--dataset",
-                        default=None,
-                        help="Run on a single dataset key (default: all)")
-    args = parser.parse_args()
-
-    dk_filter = [args.dataset] if args.dataset else None
-
-    print("=" * 60)
-    print("  Tier 1 Experiments — SVM Synthetic")
-    print("=" * 60)
-
-    if args.exp in ("all", "sigma"):
-        print("\n[1/3] σ Sensitivity")
-        run_sigma_sensitivity(dataset_keys=dk_filter, verbose=True)
-
-    if args.exp in ("all", "init"):
-        print("\n[2/3] Initialization Robustness")
-        run_init_robustness(dataset_keys=dk_filter, verbose=True)
-
-    if args.exp in ("all", "conv"):
-        print("\n[3/3] Convergence Diagnostics")
-        run_convergence_diagnostics(verbose=True)
-
-    print("\n✅ All requested experiments finished.")

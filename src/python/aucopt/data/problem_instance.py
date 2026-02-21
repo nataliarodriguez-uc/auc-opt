@@ -87,7 +87,7 @@ class ProblemInstance:
         self.K, self.D = self._compute_pairwise_differences(self.X, self.y, target_class)
         self.n_pairs = len(self.K)
         
-        # Optimization initialization
+        # Optimization initialization (Default is random; can be overridden by warm-start)
         np.random.seed(seed)
         self.w0 = np.random.randn(self.d)
         self.lambda0 = np.zeros(self.n_pairs)

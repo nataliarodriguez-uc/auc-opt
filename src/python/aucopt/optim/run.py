@@ -4,101 +4,82 @@ from copy import deepcopy
 from matplotlib import pyplot as plt
 from aucopt.optim.alm import run_alm
 from aucopt.data.problem_instance import ProblemInstance
+from initialize import WARM_START_REGISTRY
 
 # ════════════════════════════════════════════════════════════════════════════
 # FULL DATASET
 # ════════════════════════════════════════════════════════════════════════════
 
-def run_full_dataset(
+def run_alm_on_full_dataset(
     ds,
     AP,
     SP,
     LS,
     dataset_name,
-    sigma_schedule,
+    sigma0,
     tau0,
     alpha0,
+    warm_start,
+    plot_weights,
     save_weights,
     output_dir,
 ):
     """
-    Runs ALM on the full dataset using a sigma continuation schedule.
+    Runs ALM on the full dataset as a single solve.
 
-    Rather than calling run_alm once at a fixed sigma0, this function calls
-    run_alm once per level in sigma_schedule, warm-starting w and lambda from
-    the solution of the previous level. This traverses the landscape from
-    smooth (small sigma, large gamma, convex-like) to sharp (large sigma,
-    small gamma, close to the true 0-1 loss), tracking the minimizer along
-    the homotopy path rather than landing cold at a high sigma value.
+    Initialisation strategy
+    -----------------------
+    The primal is warm-started via the strategy named by the warm_start
+    parameter. Available strategies are the keys of WARM_START_REGISTRY
+    in warm_start.py — currently "lr" (logistic regression) and "lda"
+    (linear discriminant analysis). Both are convex or closed-form solves
+    that place w0 in a geometrically sensible basin before the first SSN
+    step, addressing initialisation sensitivity without adding ALM
+    parameters or continuation overhead.
 
-    Because this is a full-dataset solve, PI.K is identical at every
-    continuation level. Lambda transfers exactly between levels with no
-    re-indexing complexity.
+    The sigma0 passed here should be small (e.g. 0.1) so that gamma = 1/sigma
+    is large at the start and the landscape is smooth. run_alm's internal
+    sigma_scale growth then sharpens the problem reactively as constraints
+    tighten — no explicit schedule needed.
 
-    Parameters:
-    - ds              : object with .X and .y attributes (full training data)
-    - AP, SP, LS      : ALM, SSN, and Line Search parameter objects
-    - dataset_name    : str, used for saving results
-    - sigma_schedule  : list of sigma values in increasing order, e.g.
-                        [0.01, 0.1, 1.0, 10.0]. Each value is the sigma0
-                        passed to run_alm at that level. run_alm's internal
-                        sigma_scale growth still applies within each level.
-                        Start small so gamma = 1/sigma is large and the
-                        landscape is smooth on the first level.
-    - tau0            : regularisation weight (same across all levels)
-    - alpha0          : initial SSN step size (same across all levels)
-    - save_weights    : save final weight vector to output_dir
-    - output_dir      : path to directory where results are saved
+    Parameters
+    ----------
+    ds           : object with .X (d x n) and .y (n,) attributes
+    AP, SP, LS   : ALM, SSN, and Line Search parameter objects
+    dataset_name : str, used for saving results
+    sigma0       : initial ALM penalty — start small, e.g. 0.1
+    tau0         : regularisation weight — held fixed throughout
+    alpha0       : initial SSN step size
+    warm_start   : strategy key, one of WARM_START_REGISTRY — "lr" or "lda"
+    plot_weights : show a bar plot of learned weights at the end
+    save_weights : save final weight vector to output_dir
+    output_dir   : path to directory where results are saved
 
-    Returns:
-    - w       : final learned weight vector
-    - almvar  : ALMVar from the last continuation level
-    - almlog  : ALMLog from the last continuation level
+    Returns
+    -------
+    w      : final learned weight vector
+    almvar : ALMVar from the solve
+    almlog : ALMLog from the solve
     """
 
     X = ds.X
     y = ds.y
 
-    # Build the problem instance once — K and D are fixed for all levels
-    PI = ProblemInstance(X, y)
+    # ── Warm-start w from chosen strategy ───────────────────────────────────
+    PI    = ProblemInstance(X, y)
+    PI.w0 = WARM_START_REGISTRY[warm_start](X, y)
+    # lambda0 stays at zeros — no prior dual information for a fresh full solve
 
-    # ── Initial state ────────────────────────────────────────────────────────
-    # w and lambda start from scratch at level 0. From level 1 onwards they
-    # are warm-started from the previous level's solution.
-    w   = PI.w0.copy()        # random init from ProblemInstance
-    lam = PI.lambda0.copy()   # zeros
+    # ── Single ALM solve ─────────────────────────────────────────────────────
+    # run_alm's internal residual test grows sigma reactively.
+    # tau0 is fixed — it is a property of the problem, not a schedule parameter.
+    print(f"Running ALM  (sigma0={sigma0:.4f},  gamma0={1/sigma0:.4f})")
+    almvar, almlog = run_alm(sigma0, tau0, alpha0, PI, AP, SP, LS)
 
-    almvar = None
-    almlog = None
-
-    # ── Continuation loop ────────────────────────────────────────────────────
-    for level, sigma0 in enumerate(sigma_schedule):
-
-        print(f"Continuation level {level + 1}/{len(sigma_schedule)}  "
-              f"(sigma0={sigma0:.4f},  gamma0={1/sigma0:.4f})")
-
-        # Warm-start this level from the previous solution.
-        # On level 0 this is the random w and zero lambda from above.
-        PI.w0      = w.copy()
-        PI.lambda0 = lam.copy()
-
-        # Lambda transfer is exact here — PI.K never changes between levels
-        # because we are always solving the same full dataset.
-
-        almvar, almlog = run_alm(sigma0, tau0, alpha0, PI, AP, SP, LS)
-
-        # Carry w and lambda forward to the next level.
-        # almvar.sigma is the grown sigma at the end of this run_alm call —
-        # we do NOT carry it forward as sigma0 for the next level, because
-        # the next level has its own sigma0 from the schedule. The schedule
-        # controls the entry point; run_alm's internal growth controls what
-        # happens within each level.
-        w   = almvar.w.copy()
-        lam = almvar.lambd.copy()
-
-        print(f"  → done  |  L_final={almlog.L_final:.6f}  "
-              f"|  ALM iters={almlog.alm_iter}  "
-              f"|  grown sigma={almvar.sigma:.4f}")
+    w = almvar.w.copy()
+    print(f"  → done  |  L_final={almlog.L_final:.6f}"
+          f"  |  ALM iters={almlog.alm_iter}"
+          f"  |  grown sigma={almvar.sigma:.4f}")
 
     # ── Save learned weights ─────────────────────────────────────────────────
     os.makedirs(output_dir, exist_ok=True)
@@ -107,6 +88,17 @@ def run_full_dataset(
         np.savetxt(weight_path, w, delimiter=",")
         print(f"✅ Saved final weights to {weight_path}")
 
+    # ── Optional plot ────────────────────────────────────────────────────────
+    if plot_weights:
+        plt.figure(figsize=(8, 3))
+        plt.bar(range(len(w)), w)
+        plt.title(f"Final Learned Weights — {dataset_name}")
+        plt.xlabel("Feature Index")
+        plt.ylabel("Weight Value")
+        plt.grid(True)
+        plt.tight_layout()
+        plt.show()
+
     return w, almvar, almlog
 
 
@@ -114,7 +106,7 @@ def run_full_dataset(
 # SGD / BATCHED
 # ════════════════════════════════════════════════════════════════════════════
 
-def run_sgd_dataset(
+def run_prox_sgd_on_dataset(
     ds,
     AP,
     SP,
@@ -126,47 +118,86 @@ def run_sgd_dataset(
     n_neg,
     sigma0,
     tau0,
+    tau_min,
     alpha0,
+    warm_start,
+    plot_weights,
     save_weights,
     output_dir,
 ):
     """
     Runs Prox-SGD (batched ALM) using disjoint batches on the given dataset.
 
-    sigma0 should be set small (e.g. 0.1 or 0.01) so that the procedure
-    begins in the smooth, well-conditioned regime (large gamma = wide Region 2)
-    and naturally sharpens as sigma grows across batches.
+    Initialisation strategy
+    -----------------------
+    w is warm-started via the strategy named by the warm_start parameter
+    before the SGD loop begins. Available strategies are the keys of
+    WARM_START_REGISTRY in warm_start.py — currently "lr" and "lda".
 
-    Parameters:
-    - ds              : object with .X and .y attributes (training data)
-    - AP, SP, LS      : ALM, SSN, and Line Search parameter objects
-    - dataset_name    : str, used for saving results
-    - n_epochs        : number of SGD epochs
-    - n_batches       : batches per epoch
-    - n_pos, n_neg    : samples per class in each batch
-    - sigma0          : initial ALM penalty — start small, e.g. 0.01 or 0.1
-    - tau0            : initial regularisation weight
-    - alpha0          : initial SSN step size
-    - save_weights    : save final weight vector to output_dir
-    - output_dir      : path to directory where results are saved
+    Parameter schedules
+    -------------------
+    sigma and tau are decoupled because they serve different roles:
 
-    Fixes over original:
-    1. Global dual dictionary: dual values keyed by (i,j) pair persist across
+      current_sigma  starts at sigma0, grows reactively inside each run_alm
+                     call, and is carried forward across batches. A per-epoch
+                     decay of 0.95 prevents unbounded growth that would empty
+                     Region 2 and collapse the Hessian. sigma is a constraint
+                     enforcement parameter — it must grow monotonically to
+                     drive constraint satisfaction.
+
+      current_tau    starts at tau0 and decays slowly (0.99/epoch) to a floor
+                     of tau_min. tau is a regularisation parameter — it
+                     provides the guaranteed positive-definite τ·I floor in
+                     the Hessian. Decaying it at the same rate as sigma would
+                     keep τ/σ constant, preventing the loss from ever dominating
+                     the regulariser at convergence. The floor ensures the
+                     Hessian never becomes singular when Region 2 empties.
+
+    Fixes over original
+    -------------------
+    1. LR warm start: w initialised from logistic regression, not randn.
+
+    2. Global dual dictionary: dual values keyed by (i,j) pair persist across
        all batches and epochs. Pairs seen before reuse their accumulated dual
        estimate; unseen pairs default to 0.0. This makes the SGD loop a
        genuine distributed ALM rather than independent restarts sharing only w.
 
-    2. Sigma carry-forward: current_sigma is updated from almvar.sigma after
+    3. Sigma carry-forward: current_sigma is updated from almvar.sigma after
        each batch so the penalty grown inside run_alm is not discarded.
-       sigma grows monotonically across all batches (the condition ALM theory
-       requires for dual updates to drive constraint satisfaction), modulated
-       by a per-epoch cooling factor of 0.95.
+       sigma grows monotonically across all batches, modulated by a per-epoch
+       decay of 0.95 to prevent unbounded growth.
+
+    4. Tau decoupled: current_tau decays slowly and independently of sigma,
+       with a floor at tau_min. This keeps τ/σ shrinking naturally as sigma
+       grows, allowing the loss to progressively dominate the regulariser.
+
+    Parameters
+    ----------
+    ds           : object with .X (d x n) and .y (n,) attributes
+    AP, SP, LS   : ALM, SSN, and Line Search parameter objects
+    dataset_name : str, used for saving results
+    n_epochs     : number of SGD epochs
+    n_batches    : batches per epoch
+    n_pos, n_neg : samples per class in each batch
+    sigma0       : initial ALM penalty — start small, e.g. 0.1
+    tau0         : initial regularisation weight
+    tau_min      : floor on tau — prevents Hessian singularity, e.g. 0.01
+    alpha0       : initial SSN step size
+    warm_start   : strategy key, one of WARM_START_REGISTRY — "lr" or "lda"
+    plot_weights : show a bar plot of learned weights at the end
+    save_weights : save final weight vector to output_dir
+    output_dir   : path to directory where results are saved
+
+    Returns
+    -------
+    w : final learned weight vector
     """
 
     X = ds.X
     y = ds.y
-    d = X.shape[0]
-    w = np.random.randn(d)
+
+    # ── Warm-start w from chosen strategy ───────────────────────────────────
+    w = WARM_START_REGISTRY[warm_start](X, y)
 
     # ── Global dual dictionary ───────────────────────────────────────────────
     # Keys: (i, j) sample-pair tuples from PI.K.
@@ -174,13 +205,13 @@ def run_sgd_dataset(
     # Persists across all batches and epochs.
     global_lambda = {}
 
-    # ── Live sigma and tau — global state for the entire SGD run ────────────
-    # current_sigma starts at sigma0 (should be small) and grows via:
-    #   - run_alm's internal sigma_scale at each ALM outer iteration
-    #   - carry-forward of almvar.sigma after each batch
-    #   - per-epoch decay of 0.95 to prevent unbounded growth
-    # It is NEVER reset to sigma0 mid-run. It is a monotone (modulo decay)
-    # global variable for the entire procedure, coupled to w.
+    # ── Live sigma and tau ───────────────────────────────────────────────────
+    # current_sigma: grows via run_alm's internal residual test, carried
+    #   forward across batches, decayed 0.95/epoch to prevent collapse.
+    #   Never reset to sigma0 mid-run.
+    #
+    # current_tau: decays slowly at 0.99/epoch to a floor of tau_min.
+    #   Decoupled from sigma so that τ/σ shrinks naturally as sigma grows.
     current_sigma = sigma0
     current_tau   = tau0
 
@@ -204,8 +235,9 @@ def run_sgd_dataset(
 
     for epoch in range(n_epochs):
         print(f"Epoch {epoch + 1}/{n_epochs}  "
-              f"(current_sigma={current_sigma:.5f},  "
-              f"gamma={1/current_sigma:.4f})")
+              f"(sigma={current_sigma:.5f}  "
+              f"gamma={1/current_sigma:.4f}  "
+              f"tau={current_tau:.5f})")
 
         for _ in range(n_batches):
             pos_sample = pos_batches[batch_counter]
@@ -214,14 +246,14 @@ def run_sgd_dataset(
 
             X_batch = X[:, selected]
             y_batch = y[selected]
-            PI = ProblemInstance(X_batch, y_batch)
+            PI      = ProblemInstance(X_batch, y_batch)
 
             # Warm-start primal from previous batch
             PI.w0 = w.copy()
 
             # Look up duals for this batch's pairs.
             # Seen pairs: reuse accumulated estimate.
-            # Unseen pairs: 0.0, same as original behaviour.
+            # Unseen pairs: 0.0 — same as original behaviour for new pairs.
             PI.lambda0 = np.array([
                 global_lambda.get(pair, 0.0)
                 for pair in PI.K
@@ -237,21 +269,26 @@ def run_sgd_dataset(
             # Update primal
             w = almvar.w.copy()
 
-            # Carry grown sigma forward — do not reset to current_sigma.
-            # almvar.sigma is what run_alm grew it to across its 2 ALM iters.
-            # This is the correct entry point for the next batch.
+            # Carry grown sigma forward.
+            # almvar.sigma is the value run_alm grew to across its 2 outer
+            # iterations. Discarding it would reset constraint enforcement and
+            # break the monotonicity ALM dual convergence requires.
             current_sigma = almvar.sigma
 
-            # Write duals back into global dict keyed by actual (i,j) pairs
+            # Write duals back into global dict keyed by (i,j) pairs
             for idx, pair in enumerate(PI.K):
                 global_lambda[pair] = almvar.lambd[idx]
 
             batch_counter += 1
 
-        # Per-epoch cooling — applied to the live sigma, not the original sigma0.
-        # This prevents unbounded growth while preserving the monotone trend.
+        # ── Per-epoch parameter updates ──────────────────────────────────────
+        # sigma: 0.95 cooling on the live value prevents unbounded growth.
         current_sigma *= 0.95
-        current_tau   *= 0.95
+
+        # tau: slow independent decay toward floor.
+        # 0.99 << 0.95 so tau/sigma shrinks over time — the loss gradually
+        # dominates the regulariser, which is the correct direction at convergence.
+        current_tau = max(tau_min, current_tau * 0.99)
 
     # ── Save learned weights ─────────────────────────────────────────────────
     os.makedirs(output_dir, exist_ok=True)
@@ -259,5 +296,16 @@ def run_sgd_dataset(
         weight_path = os.path.join(output_dir, f"{dataset_name}_w_sgd.csv")
         np.savetxt(weight_path, w, delimiter=",")
         print(f"✅ Saved final weights to {weight_path}")
+
+    # ── Optional plot ────────────────────────────────────────────────────────
+    if plot_weights:
+        plt.figure(figsize=(8, 3))
+        plt.bar(range(len(w)), w)
+        plt.title(f"Final Learned Weights — {dataset_name}")
+        plt.xlabel("Feature Index")
+        plt.ylabel("Weight Value")
+        plt.grid(True)
+        plt.tight_layout()
+        plt.show()
 
     return w

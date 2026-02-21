@@ -189,16 +189,34 @@ SIGMA_FOR_INIT_EXPERIMENT = 1.0   # fix σ, vary w0
 
 SIGMA_SCALE_GRID = [1.2, 1.5, 2.0]  # add this
 
-CONVERGENCE_EXPERIMENTS = [
+#CONVERGENCE_EXPERIMENTS = [
     # PI3 — sigma_scale comparison
-    dict(dataset_key="PI3_lowsep_mlln",  sigma=0.1, sigma_scale=2.0, seed=SEEDS[0], label="PI3 scale=2-0"),
-    dict(dataset_key="PI3_lowsep_mlln",  sigma=0.1, sigma_scale=1.5, seed=SEEDS[0], label="PI3 scale=1-5"),
-    dict(dataset_key="PI3_lowsep_mlln",  sigma=0.1, sigma_scale=1.2, seed=SEEDS[0], label="PI3 scale=1-2"),
+    #dict(dataset_key="PI3_lowsep_mlln",  sigma=0.1, sigma_scale=2.0, seed=SEEDS[0], label="PI3 scale=2-0"),
+    #dict(dataset_key="PI3_lowsep_mlln",  sigma=0.1, sigma_scale=1.5, seed=SEEDS[0], label="PI3 scale=1-5"),
+    #dict(dataset_key="PI3_lowsep_mlln",  sigma=0.1, sigma_scale=1.2, seed=SEEDS[0], label="PI3 scale=1-2"),
 
     # Other interesting cases at default scale
-    dict(dataset_key="PI1_lowsep_mggn",       sigma=1.0, sigma_scale=2.0, seed=SEEDS[0], label="PI1 scale=2-0"),
-    dict(dataset_key="PI6_highsep_mlln",      sigma=1.0, sigma_scale=2.0, seed=SEEDS[0], label="PI6 scale=2-0"),
-    dict(dataset_key="PI7_lowsep_imbalanced", sigma=1.0, sigma_scale=2.0, seed=SEEDS[0], label="PI7 scale=2-0"),
+    #dict(dataset_key="PI1_lowsep_mggn",       sigma=1.0, sigma_scale=2.0, seed=SEEDS[0], label="PI1 scale=2-0"),
+    #dict(dataset_key="PI6_highsep_mlln",      sigma=1.0, sigma_scale=2.0, seed=SEEDS[0], label="PI6 scale=2-0"),
+    #dict(dataset_key="PI7_lowsep_imbalanced", sigma=1.0, sigma_scale=2.0, seed=SEEDS[0], label="PI7 scale=2-0"),
+#]
+
+CONVERGENCE_EXPERIMENTS = [
+    # existing PI3 sigma_scale comparison
+    dict(dataset_key="PI3_lowsep_mlln", sigma=0.1, sigma_scale=2.0,
+         seed=SEEDS[0], label="PI3 scale=2.0"),
+    dict(dataset_key="PI3_lowsep_mlln", sigma=0.1, sigma_scale=1.5,
+         seed=SEEDS[0], label="PI3 scale=1.5"),
+    dict(dataset_key="PI3_lowsep_mlln", sigma=0.1, sigma_scale=1.2,
+         seed=SEEDS[0], label="PI3 scale=1.2"),
+
+    # other datasets at default scale
+    dict(dataset_key="PI1_lowsep_mggn",       sigma=1.0, sigma_scale=2.0,
+         seed=SEEDS[0], label="PI1 scale=2.0"),
+    dict(dataset_key="PI6_highsep_mlln",      sigma=1.0, sigma_scale=2.0,
+         seed=SEEDS[0], label="PI6 scale=2.0"),
+    dict(dataset_key="PI7_lowsep_imbalanced", sigma=1.0, sigma_scale=2.0,
+         seed=SEEDS[0], label="PI7 scale=2.0"),
 ]
 
 # ─────────────────────────────────────────────
